@@ -44,6 +44,25 @@ const NEXT_CACHE_MS = 10_000;
 
 type Listener = (event: DialerEvent) => void;
 
+const REASON_LABELS: Record<DropReason, [string, string]> = {
+  consent: ['without consent', 'without consent'],
+  dnc: ['on do not call', 'on do not call'],
+  phone: ['with an invalid phone', 'with an invalid phone'],
+  attempt_24h: ['called in the last 24 hours', 'called in the last 24 hours'],
+  attempts_7d: ['at 3 attempts this week', 'at 3 attempts this week'],
+  already_handled: ['already handled by an agent', 'already handled by an agent'],
+  unknown_tz: ['with an unknown time zone', 'with an unknown time zone'],
+  outside_hours: ['outside calling hours', 'outside calling hours'],
+  same_block: ['waiting for a different time of day', 'waiting for a different time of day'],
+};
+
+function nobodyToCall(dropped: Record<string, number>): string {
+  const parts = Object.entries(dropped)
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, n]) => `${n} ${REASON_LABELS[reason as DropReason]?.[n === 1 ? 0 : 1] ?? reason}`);
+  return parts.length ? `nobody to call right now: ${parts.join(', ')}` : 'nobody to call: the patient list is empty';
+}
+
 function money(value: number | null | undefined): string {
   if (value === null || value === undefined) return '';
   return '$' + value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -71,6 +90,7 @@ export class Dialer {
   private polling = false;
   private holdingLogged = false;
   private lastNoEligible = '';
+  private lastNowKey = '';
   private nextCache: { at: number; patient: Patient | null } = { at: 0, patient: null };
   private tickTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
@@ -175,7 +195,7 @@ export class Dialer {
       this.logLine(this.aws.note);
       this.aws.note = null;
     }
-    this.logLine('campaign running, dialing started', 'ok');
+    this.logLine('dialing started', 'ok');
     this.emitStatus();
     void this.tick();
   }
@@ -193,7 +213,8 @@ export class Dialer {
       }
     }
     this.runState = 'stopped';
-    this.logLine('campaign paused');
+    this.lastNowKey = '';
+    this.logLine('dialing paused');
     this.emitStatus();
   }
 
@@ -266,21 +287,18 @@ export class Dialer {
     const snapshot = await this.aws.agentSnapshot();
     this.agentAvailable = snapshot.reachable ? snapshot.available : null;
     if (!snapshot.available) {
-      if (!this.holdingLogged) this.logLine('no agent available on queue, holding');
+      if (!this.holdingLogged) this.logLine('no agent is available on the queue, holding until one goes Available');
       this.holdingLogged = true;
       this.emitStatus();
       return;
     }
+    if (this.holdingLogged) this.logLine('agent available, dialing resumes', 'ok');
     this.holdingLogged = false;
     const now = new Date();
     const { patient, dropped } = this.nextEligible(now);
     this.nextCache = { at: Date.now(), patient };
     if (!patient) {
-      const why = Object.keys(dropped)
-        .sort()
-        .map((k) => `${k} ${dropped[k as DropReason]}`)
-        .join('  ');
-      const text = `no eligible patients: ${why || 'list is empty'}`;
+      const text = nobodyToCall(dropped);
       if (text !== this.lastNoEligible) {
         this.lastNoEligible = text;
         this.logLine(text);
@@ -297,10 +315,10 @@ export class Dialer {
     if (tokens.has(request.clientToken)) {
       insertAttempt(this.db, patient.run, '+1' + phone, stamp);
       this.stats.sent += 1;
-      this.logLine(`pushed  ${this.describePatient(patient.run, patient.patient, patient.balance)}`, 'ok');
+      this.logLine(`calling  ${this.describePatient(patient.run, patient.patient, patient.balance)}`, 'ok');
     }
     for (const f of failed) {
-      this.logLine(`failed  ${this.describePatient(patient.run, patient.patient, patient.balance)}  ${f.failureCode ?? ''}`, 'err');
+      this.logLine(`could not queue  ${this.describePatient(patient.run, patient.patient, patient.balance)}  ${f.failureCode ?? ''}`, 'err');
     }
     this.nextCache.at = 0;
     this.emit({ type: 'results' });
@@ -357,7 +375,7 @@ export class Dialer {
       expireAttempt(this.db, attempt.id, EXPIRED_OUTCOME);
       this.stats.no_answer += 1;
       expired += 1;
-      this.logLine(`expired  ${this.describePatient(attempt.run)}  no contact within ${STALE_MINUTES} minutes`);
+      this.logLine(`gave up  ${this.describePatient(attempt.run)}  no call went out within ${STALE_MINUTES} minutes`);
     }
     if (expired) {
       this.emit({ type: 'results' });
@@ -372,7 +390,7 @@ export class Dialer {
       const withAgent = Boolean(live.contact.AgentInfo?.ConnectedToAgentTimestamp);
       this.liveWithAgent = withAgent;
       const amd = live.contact.AnsweringMachineDetectionStatus;
-      const status = withAgent ? 'with agent' : (amd ?? 'ringing').replace(/_/g, ' ').toLowerCase();
+      const status = withAgent ? 'on the line' : (amd ?? 'ringing').replace(/_/g, ' ').toLowerCase();
       const patient = live.attrs.RUN ? patientByRun(this.db, live.attrs.RUN) : undefined;
       next = {
         contactId: live.id,
@@ -422,7 +440,23 @@ export class Dialer {
       next.name !== this.now.name ||
       next.kind !== this.now.kind;
     this.now = next;
-    if (changed) this.emit({ type: 'now', now: next });
+    if (changed) {
+      this.emit({ type: 'now', now: next });
+      this.narrate(next);
+    }
+  }
+
+  private narrate(now: NowState): void {
+    const key = `${now.kind}:${now.contactId ?? ''}:${now.status}`;
+    if (key === this.lastNowKey) return;
+    this.lastNowKey = key;
+    const who = `${now.run.replace(/^RUN /, '')}  ${now.name}  ${now.balance}`.trim();
+    if (now.kind === 'live') {
+      if (now.status === 'on the line') this.logLine(`on the line  ${who}  talk now`, 'ok');
+      else this.logLine(`${now.status}  ${who}`);
+    } else if (now.kind === 'next') {
+      this.logLine(`up next  ${who}`);
+    }
   }
 
   private recordOutcome(contactId: string, contact: Contact, attrs: Record<string, string>): void {
@@ -440,11 +474,16 @@ export class Dialer {
     resolveAttempt(this.db, open.id, contactId, outcome, talk, note);
     this.lastOutcome = outcome;
     this.stats[outcomeKey(outcome)] += 1;
-    const detail = talk ? `  ${talk}s talk` : '';
-    this.logLine(
-      `${outcomeLabel(outcome)}  ${this.describePatient(run, attrs.PATIENT)}${detail}`,
-      outcome === HUMAN_OUTCOME ? 'ok' : '',
-    );
+    const detail = talk ? `  ${talk}s on the line` : '';
+    const verdict =
+      outcomeKey(outcome) === 'voicemail'
+        ? 'voicemail, moving on'
+        : outcomeKey(outcome) === 'no_answer'
+          ? 'no answer, moving on'
+          : outcome === HUMAN_OUTCOME
+            ? 'call finished'
+            : `${outcomeLabel(outcome)}, moving on`;
+    this.logLine(`${verdict}  ${this.describePatient(run, attrs.PATIENT)}${detail}`, outcome === HUMAN_OUTCOME ? 'ok' : '');
     this.nextCache.at = 0;
     this.emit({ type: 'results' });
     this.emitStatus();
