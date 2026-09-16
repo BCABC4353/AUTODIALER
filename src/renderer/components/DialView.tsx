@@ -75,7 +75,7 @@ export function DialView({
       />
       <div className="ds-ambient view-enter flex min-h-0 flex-1 flex-col gap-fluid-sm p-fluid-md">
         <NowCalling now={now} running={running} />
-        <GlassPanel padding="sm" gap="xs" className="h-[13.5rem] shrink-0">
+        <GlassPanel padding="sm" gap="xs" className="h-[15.5rem] shrink-0">
           <header className="flex items-center justify-between">
             <PanelTitle>Today</PanelTitle>
             <span className="font-mono text-fluid-micro text-content-muted tabular-nums">{session ? `${session.sent} pushed` : ''}</span>

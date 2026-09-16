@@ -26,10 +26,10 @@ export function NowCalling({ now, running }: { now: NowState | null; running: bo
       </header>
       <div className="flex min-w-0 flex-col gap-1 pb-1">
         <div
-          className="min-w-0 truncate font-black leading-[0.9] tracking-tight text-content"
+          className={`min-w-0 truncate font-black leading-[0.9] tracking-tight ${state.kind === 'idle' ? 'text-content-subtle' : 'text-content'}`}
           style={{ fontSize: 'clamp(1.75rem, 5cqi, 3.25rem)', fontVariationSettings: "'opsz' 72, 'wght' 900" }}
         >
-          {state.name}
+          {state.kind === 'idle' ? 'No one on the line' : state.name}
         </div>
         <div className="flex flex-wrap items-baseline gap-x-7 gap-y-1 font-mono text-fluid-heading tabular-nums">
           <span className="text-content-secondary">{state.run}</span>
