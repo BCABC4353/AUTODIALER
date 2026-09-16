@@ -9,6 +9,7 @@ import type {
   ResultRow,
   SessionStats,
 } from '@shared/types';
+import { chimeConnected, chimeDone, chimeRinging } from '../lib/chime';
 
 export interface DialerState {
   status: DialerStatus | null;
@@ -43,6 +44,20 @@ export function useDialer(): DialerState {
   const [update, setUpdate] = useState<ForceUpdateState | null>(null);
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const resultsTimer = useRef<number | null>(null);
+  const lastLive = useRef<{ id: string | null; onLine: boolean }>({ id: null, onLine: false });
+
+  const announce = (next: NowState) => {
+    const prev = lastLive.current;
+    if (next.kind === 'live') {
+      const onLine = next.status === 'on the line';
+      if (next.contactId !== prev.id) chimeRinging();
+      if (onLine && !prev.onLine) chimeConnected();
+      lastLive.current = { id: next.contactId, onLine };
+      return;
+    }
+    if (prev.id !== null) chimeDone();
+    lastLive.current = { id: null, onLine: false };
+  };
 
   const refreshPatients = useCallback(async () => setPatients(await api.patients.list()), [api]);
   const refreshResults = useCallback(async () => {
@@ -76,10 +91,12 @@ export function useDialer(): DialerState {
           break;
         case 'now':
           setNow(event.now);
+          announce(event.now);
           break;
         case 'status':
           setStatus(event.status);
           setNow(event.status.now);
+          announce(event.status.now);
           break;
         case 'results':
           scheduleResults();

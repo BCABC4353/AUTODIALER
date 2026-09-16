@@ -198,6 +198,7 @@ export function buildRequest(
           PATIENT: patient ?? '',
           RUN: run,
           BALANCE: balance === null ? '' : balance.toFixed(2),
+          BALANCE_SPOKEN: balance === null ? '' : String(Math.round(balance)),
           TRIPDATE: '',
         },
       },

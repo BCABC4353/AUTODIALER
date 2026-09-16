@@ -6,6 +6,7 @@ import { Footer } from './components/Footer';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { Header, type View } from './components/Header';
 import { LoadView } from './components/LoadView';
+import { PhoneRail } from './components/PhoneRail';
 import { ResultsView } from './components/ResultsView';
 import { useDialer } from './state/useDialer';
 
@@ -27,17 +28,20 @@ export function App() {
           </Button>
         </div>
       )}
-      <main className="flex min-h-0 flex-1 flex-col">
-        {view === 'load' && (
-          <LoadView key="load" patients={d.patients} onImport={() => void d.importCsv()} onRefresh={() => void d.refreshPatients()} onToggleDnc={(run) => void d.toggleDnc(run)} />
-        )}
-        {view === 'dial' && (
-          <DialView key="dial" status={d.status} now={d.now} log={d.log} session={d.session} onStart={() => void d.start()} onStop={() => void d.stop()} />
-        )}
-        {view === 'results' && (
-          <ResultsView key="results" results={d.results} onRefresh={() => void d.refreshResults()} onExport={() => void d.exportCsv()} onClear={() => void d.clearHistory()} />
-        )}
-      </main>
+      <div className="flex min-h-0 flex-1">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {view === 'load' && (
+            <LoadView key="load" patients={d.patients} onImport={() => void d.importCsv()} onRefresh={() => void d.refreshPatients()} onToggleDnc={(run) => void d.toggleDnc(run)} />
+          )}
+          {view === 'dial' && (
+            <DialView key="dial" status={d.status} now={d.now} log={d.log} session={d.session} onStart={() => void d.start()} onStop={() => void d.stop()} />
+          )}
+          {view === 'results' && (
+            <ResultsView key="results" results={d.results} onRefresh={() => void d.refreshResults()} onExport={() => void d.exportCsv()} onClear={() => void d.clearHistory()} />
+          )}
+        </main>
+        <PhoneRail status={d.status} />
+      </div>
       <Footer status={d.status} />
       {d.update && <ForceUpdateModal state={d.update} onRestart={() => void window.dialer.app.restartNow()} />}
     </div>
