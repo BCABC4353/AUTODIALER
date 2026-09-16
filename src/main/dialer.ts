@@ -70,6 +70,7 @@ export class Dialer {
   private pushing = false;
   private polling = false;
   private holdingLogged = false;
+  private lastNoEligible = '';
   private nextCache: { at: number; patient: Patient | null } = { at: 0, patient: null };
   private tickTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
@@ -279,10 +280,15 @@ export class Dialer {
         .sort()
         .map((k) => `${k} ${dropped[k as DropReason]}`)
         .join('  ');
-      this.logLine(`no eligible patients: ${why || 'list is empty'}`);
+      const text = `no eligible patients: ${why || 'list is empty'}`;
+      if (text !== this.lastNoEligible) {
+        this.lastNoEligible = text;
+        this.logLine(text);
+      }
       this.emitStatus();
       return;
     }
+    this.lastNoEligible = '';
     const phone = normalizePhone(patient.phone) as string;
     const request: OutboundRequest = buildRequest(patient.run, phone, patient.patient, patient.balance, now, EXPIRY_MINUTES);
     const { accepted, failed } = await this.aws.send([request]);
@@ -449,6 +455,7 @@ export class Dialer {
     const n = clearAttempts(this.db);
     this.seen.clear();
     this.lastOutcome = '';
+    this.lastNoEligible = '';
     this.stats = { sent: 0, human: 0, voicemail: 0, no_answer: 0, other: 0 };
     this.logLine(`cleared ${n} attempt records`);
     this.emit({ type: 'results' });
