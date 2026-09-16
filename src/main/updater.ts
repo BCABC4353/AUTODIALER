@@ -4,8 +4,8 @@ import { autoUpdater } from 'electron-updater';
 import type { Dialer } from './dialer';
 import type { ForceUpdateState } from '../shared/types';
 
-const GITHUB_OWNER = 'bcabc';
-const GITHUB_REPO = 'autodialer';
+const GITHUB_OWNER = 'BCABC4353';
+const GITHUB_REPO = 'AUTODIALER';
 const FORCE_POLICY_URL = `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/main/update-policy.json`;
 
 const ROUTINE_CHECK_MS = 2 * 60 * 60 * 1000;

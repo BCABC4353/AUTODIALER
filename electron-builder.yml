@@ -4,8 +4,8 @@ copyright: Copyright © 2026 BC-ABC
 
 publish:
   provider: github
-  owner: bcabc
-  repo: autodialer
+  owner: BCABC4353
+  repo: AUTODIALER
 
 directories:
   output: build-output
