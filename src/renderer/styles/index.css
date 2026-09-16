@@ -1,0 +1,116 @@
+@import '../../../design_system/fonts.css';
+@import '../../../design_system/theme.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family:
+    'Inter Variable',
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--surface-deep);
+  color: var(--text-primary);
+  text-wrap: pretty;
+  user-select: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.font-mono,
+code,
+pre,
+kbd,
+samp {
+  font-feature-settings:
+    'liga' 0,
+    'clig' 0,
+    'calt' 0;
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+}
+
+@supports (font-size-adjust: 0.545) {
+  :root {
+    font-size-adjust: 0.545;
+  }
+}
+
+@keyframes now-flash {
+  from {
+    box-shadow:
+      inset 0 0 0 2px var(--accent),
+      0 0 28px -6px var(--accent);
+  }
+  to {
+    box-shadow:
+      inset 0 0 0 0 transparent,
+      0 0 0 0 transparent;
+  }
+}
+
+.now-flash {
+  animation: now-flash 500ms var(--motion-ease-out) both;
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.view-enter {
+  animation: view-enter var(--motion-medium) var(--motion-ease-out) both;
+}
+
+@keyframes log-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.log-line {
+  animation: log-enter var(--motion-base) var(--motion-ease-out) both;
+}
+
+.ds-table-row {
+  height: clamp(1.75rem, 0.8125rem + 3cqb, 2.5rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .now-flash,
+  .view-enter,
+  .log-line {
+    animation: none;
+  }
+}

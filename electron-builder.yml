@@ -1,0 +1,38 @@
+appId: com.bcabc.autodialer
+productName: BCABC Autodialer
+copyright: Copyright © 2026 BC-ABC
+
+publish:
+  provider: github
+  owner: bcabc
+  repo: autodialer
+
+directories:
+  output: build-output
+  buildResources: assets
+
+files:
+  - dist/**/*
+  - assets/**/*
+  - package.json
+
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icons/icon.ico
+  artifactName: BCABC-Autodialer-${version}-Windows-Setup.${ext}
+  verifyUpdateCodeSignature: false
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  installerIcon: assets/icons/icon.ico
+  uninstallerIcon: assets/icons/icon.ico
+  installerHeaderIcon: assets/icons/icon.ico
+  deleteAppDataOnUninstall: false

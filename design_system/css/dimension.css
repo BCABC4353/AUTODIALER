@@ -1,0 +1,180 @@
+:root[data-dimension='A'] {
+  --chrome-rest:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -1px 0 var(--edge-dark);
+  --chrome-hover:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -2px 4px var(--edge-inset),
+    var(--shadow-contact);
+  --chrome-press:
+    inset 0 2px 4px var(--edge-inset),
+    inset 0 -1px 0 var(--edge-light);
+  --chrome-press-deep:
+    inset 0 3px 8px var(--edge-inset),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent),
+    inset 0 -1px 0 var(--edge-light);
+  --tile-socket:
+    inset 0 1px 3px var(--edge-inset),
+    inset 0 -1px 0 var(--edge-light);
+  --tile-lit-hit: inset 0 0 6px color-mix(in srgb, var(--tile-c, var(--accent)) 22%, transparent);
+  --tile-lit-pass: inset 0 0 6px color-mix(in srgb, var(--tile-pass-fg) 30%, transparent);
+  --tile-depth: var(--tile-socket);
+}
+
+:root[data-dimension='B'] {
+  --chrome-rest:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -2px 3px var(--edge-inset),
+    var(--shadow-contact);
+  --chrome-hover:
+    inset 0 1px 0 var(--edge-light),
+    inset 0 -3px 6px var(--edge-inset),
+    var(--shadow-ambient);
+  --chrome-press:
+    inset 0 3px 7px var(--edge-inset),
+    inset 0 -2px 4px var(--edge-light);
+  --chrome-press-deep:
+    inset 0 4px 10px var(--edge-inset),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    inset 0 0 10px color-mix(in srgb, var(--accent) 25%, transparent),
+    inset 0 -2px 4px var(--edge-light);
+  --tile-socket:
+    inset 0 1px 0 var(--edge-dark),
+    inset 0 2px 5px var(--edge-inset),
+    inset 0 -2px 0 var(--edge-light);
+  --tile-lit-hit:
+    inset 0 0 12px color-mix(in srgb, var(--tile-c, var(--accent)) 45%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--tile-c, var(--accent)) 30%, transparent);
+  --tile-lit-pass: inset 0 0 11px color-mix(in srgb, var(--tile-pass-fg) 55%, transparent);
+  --tile-depth: var(--tile-socket);
+}
+
+:root[data-dimension] .ds-button:not(:disabled):not(.ds-chip),
+:root[data-dimension] .ds-pressable:not(:disabled):not(.ds-chip) {
+  box-shadow: var(--chrome-rest);
+  transform: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :root[data-dimension] .ds-button:hover:not(:disabled):not(.ds-chip),
+  :root[data-dimension] .ds-pressable:hover:not(:disabled):not(.ds-chip) {
+    box-shadow: var(--chrome-hover);
+    transform: none;
+  }
+}
+
+:root[data-dimension] .ds-button:active:not(:disabled):not(.ds-chip),
+:root[data-dimension] .ds-pressable:active:not(:disabled):not(.ds-chip) {
+  box-shadow: var(--chrome-press);
+  transform: none;
+  transition-duration: var(--motion-instant);
+}
+
+@media (any-pointer: coarse) {
+  :root[data-dimension] .ds-button:active:not(:disabled):not(.ds-chip),
+  :root[data-dimension] .ds-pressable:active:not(:disabled):not(.ds-chip) {
+    filter: brightness(0.9);
+    box-shadow: none;
+    transform: none;
+    transition-property: filter;
+    transition-duration: var(--motion-instant);
+  }
+}
+
+:root[data-dimension] .ds-pressable[aria-expanded='true']:not(.ds-chip),
+:root[data-dimension] .ds-pressable[aria-expanded='true']:hover:not(:disabled):not(.ds-chip),
+:root[data-dimension] .ds-pressable[aria-expanded='true']:active:not(:disabled):not(.ds-chip) {
+  box-shadow: var(--chrome-press);
+  transform: none;
+}
+
+:root[data-dimension] .ds-button-gradient-blue:not(:disabled) {
+  box-shadow: var(--btn-grad-blue-glow), var(--chrome-rest);
+}
+
+:root[data-dimension] .ds-button-gradient-amber:not(:disabled) {
+  box-shadow: var(--btn-grad-amber-glow), var(--chrome-rest);
+}
+
+:root[data-dimension] .ds-button-gradient-emerald:not(:disabled) {
+  box-shadow: var(--btn-grad-emerald-glow), var(--chrome-rest);
+}
+
+:root[data-dimension] .ds-button-gradient-violet:not(:disabled) {
+  box-shadow: var(--btn-grad-violet-glow), var(--chrome-rest);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :root[data-dimension] .ds-button-gradient-blue:hover:not(:disabled) {
+    box-shadow: var(--btn-grad-blue-glow), var(--chrome-hover);
+  }
+
+  :root[data-dimension] .ds-button-gradient-amber:hover:not(:disabled) {
+    box-shadow: var(--btn-grad-amber-glow), var(--chrome-hover);
+  }
+
+  :root[data-dimension] .ds-button-gradient-emerald:hover:not(:disabled) {
+    box-shadow: var(--btn-grad-emerald-glow), var(--chrome-hover);
+  }
+
+  :root[data-dimension] .ds-button-gradient-violet:hover:not(:disabled) {
+    box-shadow: var(--btn-grad-violet-glow), var(--chrome-hover);
+  }
+}
+
+:root[data-dimension] [data-press-deep='1'],
+:root[data-dimension] [data-press-deep='1']:active {
+  box-shadow: var(--chrome-press-deep);
+  transform: none;
+}
+
+[data-press-charge] {
+  position: relative;
+  overflow: hidden;
+}
+
+[data-press-charge]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+[data-press-charge='arming']::after {
+  animation: ds-press-charge var(--press-charge-ms, 400ms) linear forwards;
+}
+
+[data-press-charge='deep']::after {
+  transform: scaleX(1);
+}
+
+@keyframes ds-press-charge {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-press-charge='arming']::after {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.35;
+  }
+}
+
+:root[data-dimension] [data-matrix-tile][data-status='pass'] {
+  box-shadow: var(--tile-socket), var(--tile-lit-pass);
+}
+
+:root[data-dimension] [data-matrix-tile][data-status='fail'],
+:root[data-dimension] [data-matrix-tile][data-status='downcoded'] {
+  box-shadow: var(--tile-socket), var(--tile-lit-hit);
+}

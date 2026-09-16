@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build-output/
+.env
+.env.*
+*.log
+npm-debug.log*
+.electron-builder-cache/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude/settings.local.json
+.claude/worktrees/
