@@ -1,6 +1,6 @@
 {
   "name": "bcabc-autodialer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "BCABC patient claim follow-up autodialer. Private-repo updates read the GitHub token from the AUTODIALER_GH_TOKEN environment variable at runtime; AWS credentials come from the machine's default profile chain (AWS_PROFILE).",
   "productName": "BCABC Autodialer",
   "author": "BC-ABC",
