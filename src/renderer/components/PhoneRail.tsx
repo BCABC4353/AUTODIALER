@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react';
-import { Button, GlassPanel, PanelTitle, Pill } from '@ds/index.js';
+import { Button, GlassPanel, PanelTitle } from '@ds/index.js';
 import { CCP_PARTITION, CCP_URL } from '@shared/ccp';
-import type { DialerStatus } from '@shared/types';
 
 const WIDTH = 412;
 
-export function PhoneRail({ status }: { status: DialerStatus | null }) {
+export function PhoneRail() {
   const [open, setOpen] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const ref = useRef<HTMLElement & { reload?: () => void }>(null);
@@ -19,9 +18,6 @@ export function PhoneRail({ status }: { status: DialerStatus | null }) {
     return () => el.removeEventListener('did-finish-load', done);
   }, []);
 
-  const agent = status?.agentAvailable;
-  const chip = agent === true ? { label: 'available', tone: 'emerald' } : agent === false ? { label: 'not available', tone: 'amber' } : { label: 'unknown', tone: 'slate' };
-
   return (
     <aside
       aria-label="Phone"
@@ -30,14 +26,9 @@ export function PhoneRail({ status }: { status: DialerStatus | null }) {
     >
       {open ? (
         <GlassPanel padding="none" gap="none" className="min-h-0 flex-1 overflow-hidden">
-          <header className="flex items-center justify-between gap-2 px-3 py-2">
-            <div className="flex items-center gap-2">
-              <PanelTitle>Phone</PanelTitle>
-              <Pill tone={chip.tone} size="sm" border>
-                {chip.label}
-              </Pill>
-            </div>
-            <div className="flex items-center gap-1">
+          <header className="relative flex items-center justify-center px-3 py-2">
+            <PanelTitle>Phone</PanelTitle>
+            <div className="absolute inset-y-0 right-2 flex items-center gap-1">
               <Button variant="ghost" size="sm" aria-label="Reload phone" onClick={() => ref.current?.reload?.()}>
                 <RefreshCw size={13} />
               </Button>

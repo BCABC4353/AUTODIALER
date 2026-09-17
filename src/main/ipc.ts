@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { csvEscape, loadCsv } from './csv';
-import { allResults, listPatients, listResults, toggleDnc, upsertPatients } from './db';
+import { allResults, listPatients, listResults, replacePatients, toggleDnc } from './db';
 import type { Dialer } from './dialer';
 import type { DialerEvent } from '../shared/types';
 
@@ -33,9 +33,10 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
       dialer.logLine(`csv: ${message}`, 'err');
       throw new Error(message);
     }
-    upsertPatients(dialer.db, rows);
+    const { added, dropped } = replacePatients(dialer.db, rows);
     const invalid = rows.filter((r) => !r.phone).length;
-    dialer.logLine(`loaded ${rows.length} rows from ${path.basename(file)} (${invalid} invalid phone)`, 'ok');
+    const notes = [`${added} new`, `${dropped} removed`, `${invalid} invalid phone`].join(', ');
+    dialer.logLine(`loaded ${rows.length} patients from ${path.basename(file)} (${notes})`, 'ok');
     dialer.requestTick();
     send({ type: 'patients' });
     return { file: path.basename(file), rows: rows.length, invalid };

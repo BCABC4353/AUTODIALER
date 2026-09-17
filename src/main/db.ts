@@ -77,19 +77,27 @@ export interface PatientInput {
 }
 
 export function listPatients(db: Db): Patient[] {
-  return db.prepare('SELECT * FROM patients ORDER BY run').all() as Patient[];
+  return db.prepare('SELECT * FROM patients WHERE consent=1 ORDER BY run').all() as Patient[];
 }
 
-export function upsertPatients(db: Db, rows: PatientInput[]): void {
+export function replacePatients(db: Db, rows: PatientInput[]): { added: number; dropped: number } {
   const stmt = db.prepare(
     'INSERT INTO patients (run, phone, patient, balance, consent, dnc, tz) VALUES (?,?,?,?,1,0,?) ' +
       'ON CONFLICT(run) DO UPDATE SET phone=excluded.phone, patient=excluded.patient, ' +
       'balance=excluded.balance, tz=excluded.tz, consent=1',
   );
   const run = db.transaction((items: PatientInput[]) => {
-    for (const r of items) stmt.run(r.run, r.phone, r.patient, r.balance, r.tz);
+    const before = new Set((db.prepare('SELECT run FROM patients WHERE consent=1').all() as { run: string }[]).map((r) => r.run));
+    db.prepare('UPDATE patients SET consent=0').run();
+    let added = 0;
+    for (const r of items) {
+      stmt.run(r.run, r.phone, r.patient, r.balance, r.tz);
+      if (!before.has(r.run)) added += 1;
+      before.delete(r.run);
+    }
+    return { added, dropped: before.size };
   });
-  run(rows);
+  return run(rows);
 }
 
 export function toggleDnc(db: Db, run: string): void {

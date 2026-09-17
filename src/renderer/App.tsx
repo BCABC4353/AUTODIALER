@@ -40,7 +40,7 @@ export function App() {
             <ResultsView key="results" results={d.results} onRefresh={() => void d.refreshResults()} onExport={() => void d.exportCsv()} onClear={() => void d.clearHistory()} />
           )}
         </main>
-        <PhoneRail status={d.status} />
+        <PhoneRail />
       </div>
       <Footer status={d.status} />
       {d.update && <ForceUpdateModal state={d.update} onRestart={() => void window.dialer.app.restartNow()} />}
