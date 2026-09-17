@@ -26,8 +26,9 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
     const file = result.filePaths[0];
     if (result.canceled || !file) return null;
     let rows;
+    let duplicates = 0;
     try {
-      rows = loadCsv(file);
+      ({ rows, duplicates } = loadCsv(file));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       dialer.logLine(`csv: ${message}`, 'err');
@@ -35,8 +36,10 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
     }
     const { added, dropped } = replacePatients(dialer.db, rows);
     const invalid = rows.filter((r) => !r.phone).length;
-    const notes = [`${added} new`, `${dropped} removed`, `${invalid} without a dialable number`].join(', ');
-    dialer.logLine(`loaded ${rows.length} patients from ${path.basename(file)} (${notes})`, 'ok');
+    const notes = [`${added} new`, `${dropped} removed`, `${invalid} without a dialable number`];
+    if (duplicates) notes.push(`${duplicates} repeated run${duplicates === 1 ? '' : 's'} collapsed to the last row`);
+    const summary = notes.join(', ');
+    dialer.logLine(`loaded ${rows.length} patients from ${path.basename(file)} (${summary})`, 'ok');
     dialer.requestTick();
     send({ type: 'patients' });
     return { file: path.basename(file), rows: rows.length, invalid };

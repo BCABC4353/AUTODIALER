@@ -513,7 +513,10 @@ export class Dialer {
       next.contactId !== this.now.contactId ||
       next.status !== this.now.status ||
       next.name !== this.now.name ||
-      next.kind !== this.now.kind;
+      next.kind !== this.now.kind ||
+      next.tripDate !== this.now.tripDate ||
+      next.schedule !== this.now.schedule ||
+      next.event !== this.now.event;
     this.now = next;
     if (changed) {
       this.emit({ type: 'now', now: next });
