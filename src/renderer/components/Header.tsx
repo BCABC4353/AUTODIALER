@@ -1,6 +1,8 @@
-import { Pill, SegmentedControl } from '@ds/index.js';
+import { Moon, Sun } from 'lucide-react';
+import { Button, Pill, SegmentedControl } from '@ds/index.js';
 import type { DialerStatus, Tone } from '@shared/types';
 import { LOGO_SRC } from '../lib/logo';
+import { useTheme } from '../lib/theme';
 import { MarsLight } from './MarsLight';
 
 export type View = 'load' | 'dial' | 'results' | 'insights';
@@ -31,6 +33,7 @@ export function Header({
   patientCount: number;
 }) {
   const chip = stateChip(status);
+  const { theme, toggle } = useTheme();
   const live = status?.now.kind === 'live';
   const active = live || status?.runState === 'running' || status?.runState === 'starting';
   return (
@@ -67,6 +70,16 @@ export function Header({
           <div className="hidden whitespace-nowrap text-fluid-nano font-black uppercase tracking-wider text-content-muted tabular-nums @[900px]/header:block">
             Patients: <span className="text-content">{patientCount.toLocaleString('en-US')}</span>
           </div>
+          <Button
+            variant="secondary"
+            size="chrome"
+            onClick={toggle}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            className="shrink-0"
+          >
+            {theme === 'dark' ? <Moon /> : <Sun />}
+          </Button>
         </div>
       </div>
     </header>

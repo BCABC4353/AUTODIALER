@@ -3,8 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
     <title>BCABC Autodialer</title>
+    <script>
+      try {
+        var t = localStorage.getItem('autodialer-theme') === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.style.colorScheme = t;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
