@@ -37,9 +37,12 @@ export function AttemptsTrend({ title, sentence, labels, series, replayKey }: { 
   const ticks = [max, max / 2];
   const scaleX = (i: number) => (labels.length <= 1 ? 0 : (i / (labels.length - 1)) * VIEW_W);
   const scaleY = (v: number) => VIEW_H - (v / max) * VIEW_H * 0.92;
-  const pathFor = (values: number[]) => values.map((v, i) => `${i === 0 ? 'M' : 'L'}${scaleX(i).toFixed(2)} ${scaleY(v).toFixed(2)}`).join(' ');
+  const pathFor = (values: number[]) =>
+    values.length < 2 ? '' : values.map((v, i) => `${i === 0 ? 'M' : 'L'}${scaleX(i).toFixed(2)} ${scaleY(v).toFixed(2)}`).join(' ');
   const areaFor = (values: number[]) =>
-    `M0,${VIEW_H} L${values.map((v, i) => `${scaleX(i).toFixed(2)},${scaleY(v).toFixed(2)}`).join(' L')} L${VIEW_W},${VIEW_H} Z`;
+    values.length < 2
+      ? ''
+      : `M0,${VIEW_H} L${values.map((v, i) => `${scaleX(i).toFixed(2)},${scaleY(v).toFixed(2)}`).join(' L')} L${VIEW_W},${VIEW_H} Z`;
   const labelStep = Math.max(1, Math.ceil(labels.length / 6));
   return (
     <Tile title={title} sentence={sentence}>

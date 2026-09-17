@@ -4,7 +4,7 @@ import { Button, GlassPanel, PanelTitle, Pill } from '@ds/index.js';
 import { CCP_PARTITION, CCP_URL } from '@shared/ccp';
 import type { DialerStatus } from '@shared/types';
 
-const WIDTH = 348;
+const WIDTH = 412;
 
 export function PhoneRail({ status }: { status: DialerStatus | null }) {
   const [open, setOpen] = useState(true);
@@ -52,7 +52,14 @@ export function PhoneRail({ status }: { status: DialerStatus | null }) {
                 Loading the phone…
               </div>
             )}
-            <webview ref={ref as never} src={CCP_URL} partition={CCP_PARTITION} allowpopups="true" className="block h-full w-full" />
+            <webview
+              ref={ref as never}
+              src={CCP_URL}
+              partition={CCP_PARTITION}
+              allowpopups="true"
+              className="absolute inset-0"
+              style={{ display: 'flex', width: '100%', height: '100%' }}
+            />
           </div>
         </GlassPanel>
       ) : (

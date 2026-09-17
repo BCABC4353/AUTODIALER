@@ -85,6 +85,8 @@ export function useDialer(): DialerState {
       switch (event.type) {
         case 'log':
           setLog((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.ts === event.line.ts && last.text === event.line.text && last.level === event.line.level) return prev;
             const next = [...prev, event.line];
             return next.length > LOG_CAP ? next.slice(next.length - LOG_CAP) : next;
           });
