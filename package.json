@@ -20,8 +20,7 @@
     "build:renderer": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.renderer.json",
     "start": "electron .",
-    "dist": "npm run build && electron-builder --win --publish never",
-    "release": "npm run build && electron-builder --win --publish always"
+    "dist": "npm run build && electron-builder --win --publish never"
   },
   "dependencies": {
     "@aws-sdk/client-connect": "^3.900.0",
