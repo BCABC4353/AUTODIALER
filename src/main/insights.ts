@@ -86,9 +86,9 @@ export async function buildDetail(contact: Contact): Promise<ContactDetail> {
 }
 
 export async function fetchAnalysis(contactId: string): Promise<CallAnalysis> {
-  const redacted = await fetchSegments(contactId, 'Redacted');
-  if (redacted.status !== 'unavailable') return redacted;
-  return fetchSegments(contactId, 'Raw');
+  const raw = await fetchSegments(contactId, 'Raw');
+  if (raw.status !== 'unavailable') return raw;
+  return fetchSegments(contactId, 'Redacted');
 }
 
 async function fetchSegments(contactId: string, outputType: 'Raw' | 'Redacted'): Promise<CallAnalysis> {
@@ -186,7 +186,7 @@ export async function findAnalysisKey(contactId: string, at: Date | null): Promi
       const res = await s3.send(new ListObjectsV2Command({ Bucket: RECORDING_BUCKET, Prefix: prefix, ContinuationToken: token, MaxKeys: 1000 }));
       const hits = (res.Contents ?? []).filter((o) => o.Key && o.Key.includes(contactId) && o.Key.endsWith('.json'));
       if (hits.length) {
-        const preferred = hits.filter((o) => /Redacted/i.test(o.Key ?? ''));
+        const preferred = hits.filter((o) => !/Redacted/i.test(o.Key ?? ''));
         const pool = preferred.length ? preferred : hits;
         return pool.sort((a, b) => (b.Key ?? '').localeCompare(a.Key ?? ''))[0]?.Key ?? null;
       }
