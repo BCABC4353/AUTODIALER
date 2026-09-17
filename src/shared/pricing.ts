@@ -4,6 +4,7 @@ export interface Rates {
   campaignPerMinute: number;
   voicePerMinute: number;
   telephonyPerMinute: number;
+  lensPerMinute: number;
   perCall: number;
 }
 
@@ -11,6 +12,7 @@ export const RATES: Rates = {
   campaignPerMinute: 0.045,
   voicePerMinute: 0.038,
   telephonyPerMinute: 0.0048,
+  lensPerMinute: 0,
   perCall: 0,
 };
 
@@ -18,6 +20,7 @@ export const RATE_LABELS: { key: keyof Rates; label: string; unit: string; sourc
   { key: 'campaignPerMinute', label: 'campaign minute', unit: 'from dial start', source: 'billed USW2-ai-high-volume-traffic-end-customer-mins' },
   { key: 'voicePerMinute', label: 'voice minute', unit: 'from answer', source: 'billed USW2-ai-end-customer-mins' },
   { key: 'telephonyPerMinute', label: 'telephony minute', unit: 'US outbound', source: 'published rate, not yet on the bill' },
+  { key: 'lensPerMinute', label: 'Contact Lens minute', unit: 'agent-handled calls', source: 'included in the Connect AI tier; raise this if a Contact Lens line appears on the bill' },
   { key: 'perCall', label: 'per call', unit: 'attempt', source: 'billed USW2-ai-Outbound-Campaigns-Voice-calls' },
 ];
 
@@ -53,11 +56,11 @@ export function durationsFor(
   return estimateDurations(outcome, talkSeconds);
 }
 
-export function attemptCost(d: Durations, rates: Rates = RATES): number {
+export function attemptCost(d: Durations, rates: Rates = RATES, agentHandled = false): number {
   return (
     rates.perCall +
     (d.dialSeconds / 60) * rates.campaignPerMinute +
-    (d.answerSeconds / 60) * (rates.voicePerMinute + rates.telephonyPerMinute)
+    (d.answerSeconds / 60) * (rates.voicePerMinute + rates.telephonyPerMinute + (agentHandled ? rates.lensPerMinute : 0))
   );
 }
 

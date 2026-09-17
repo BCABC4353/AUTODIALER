@@ -86,6 +86,12 @@ export async function buildDetail(contact: Contact): Promise<ContactDetail> {
 }
 
 export async function fetchAnalysis(contactId: string): Promise<CallAnalysis> {
+  const redacted = await fetchSegments(contactId, 'Redacted');
+  if (redacted.status !== 'unavailable') return redacted;
+  return fetchSegments(contactId, 'Raw');
+}
+
+async function fetchSegments(contactId: string, outputType: 'Raw' | 'Redacted'): Promise<CallAnalysis> {
   const transcript: TranscriptTurn[] = [];
   const categories = new Set<string>();
   let summary: string | null = null;
@@ -97,7 +103,7 @@ export async function fetchAnalysis(contactId: string): Promise<CallAnalysis> {
         new ListRealtimeContactAnalysisSegmentsV2Command({
           InstanceId: CONNECT_INSTANCE_ID,
           ContactId: contactId,
-          OutputType: 'Raw',
+          OutputType: outputType,
           SegmentTypes: ['Transcript', 'Categories', 'PostContactSummary'],
           MaxResults: 100,
           NextToken: token,
@@ -178,8 +184,12 @@ export async function findAnalysisKey(contactId: string, at: Date | null): Promi
     let token: string | undefined;
     do {
       const res = await s3.send(new ListObjectsV2Command({ Bucket: RECORDING_BUCKET, Prefix: prefix, ContinuationToken: token, MaxKeys: 1000 }));
-      const hits = (res.Contents ?? []).filter((o) => o.Key && o.Key.includes(contactId) && o.Key.endsWith('.json') && !/Redacted/i.test(o.Key));
-      if (hits.length) return hits.sort((a, b) => (b.Key ?? '').localeCompare(a.Key ?? ''))[0]?.Key ?? null;
+      const hits = (res.Contents ?? []).filter((o) => o.Key && o.Key.includes(contactId) && o.Key.endsWith('.json'));
+      if (hits.length) {
+        const preferred = hits.filter((o) => /Redacted/i.test(o.Key ?? ''));
+        const pool = preferred.length ? preferred : hits;
+        return pool.sort((a, b) => (b.Key ?? '').localeCompare(a.Key ?? ''))[0]?.Key ?? null;
+      }
       token = res.IsTruncated ? res.NextContinuationToken : undefined;
     } while (token);
   }

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Download, RefreshCw, Trash2 } from 'lucide-react';
-import { Button, GlassPanel, PanelTitle } from '@ds/index.js';
+import { Button, GlassPanel, PanelTitle, Pill } from '@ds/index.js';
 import type { ResultRow } from '@shared/types';
+import { categoryEffect, categoryLabel } from '@shared/categories';
 import { formatPhone, stripE164 } from '@shared/phone';
 import { formatLocal } from '@shared/time';
 import { outcomeLabel, outcomeTone } from '@shared/outcome';
@@ -40,11 +41,42 @@ const COLUMNS: Column<ResultRow>[] = [
     cell: (r) => (r.outcome ? <span title={r.cost_estimated ? 'estimated from the outcome; durations were not recorded' : undefined}>{formatCost(r.cost)}{r.cost_estimated ? '*' : ''}</span> : <BlankDash />),
   },
   {
+    id: 'flags',
+    label: 'Said',
+    width: '14rem',
+    cell: (r) => {
+      const cats = categoriesOf(r);
+      if (cats.length === 0) return r.agent_id && !r.analysis_json ? <span className="text-content-muted">pending</span> : <BlankDash />;
+      return (
+        <span className="flex flex-wrap gap-1">
+          {cats.slice(0, 3).map((c) => (
+            <Pill key={c} tone={EFFECT_TONE[categoryEffect(c) ?? ''] ?? 'violet'} size="sm" border>
+              {categoryLabel(c)}
+            </Pill>
+          ))}
+          {cats.length > 3 && <span className="text-content-muted">+{cats.length - 3}</span>}
+        </span>
+      );
+    },
+  },
+  {
     id: 'summary',
     label: 'Summary',
-    cell: (r) => (r.summary ? <span className="normal-case text-content-secondary">{r.summary.length > 80 ? r.summary.slice(0, 77) + '…' : r.summary}</span> : r.agent_id ? <span className="text-content-muted">pending</span> : <BlankDash />),
+    cell: (r) => (r.summary ? <span className="normal-case text-content-secondary">{r.summary.length > 80 ? r.summary.slice(0, 77) + '…' : r.summary}</span> : <BlankDash />),
   },
 ];
+
+const EFFECT_TONE: Record<string, string> = { paid: 'emerald', dnc: 'red', handled: 'blue', callback: 'amber', flag: 'violet' };
+
+function categoriesOf(r: ResultRow): string[] {
+  if (!r.analysis_json) return [];
+  try {
+    const parsed = JSON.parse(r.analysis_json) as { categories?: string[] };
+    return parsed.categories ?? [];
+  } catch {
+    return [];
+  }
+}
 
 export function ResultsView({
   results,

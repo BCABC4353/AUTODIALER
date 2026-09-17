@@ -42,7 +42,7 @@ export function App() {
           )}
           {view === 'insights' && <InsightsView key="insights" resultsTick={d.resultsTick} />}
         </main>
-        <PhoneRail />
+        <PhoneRail visible={view === 'dial'} />
       </div>
       <Footer status={d.status} />
       {d.update && <ForceUpdateModal state={d.update} onRestart={() => void window.dialer.app.restartNow()} />}

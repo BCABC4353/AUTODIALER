@@ -5,7 +5,7 @@ import { CCP_PARTITION, CCP_URL } from '@shared/ccp';
 
 const WIDTH = 412;
 
-export function PhoneRail() {
+export function PhoneRail({ visible }: { visible: boolean }) {
   const [open, setOpen] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const ref = useRef<HTMLElement & { reload?: () => void }>(null);
@@ -18,46 +18,47 @@ export function PhoneRail() {
     return () => el.removeEventListener('did-finish-load', done);
   }, []);
 
+  const shown = visible && open;
   return (
     <aside
       aria-label="Phone"
-      className="ds-ambient flex shrink-0 flex-col border-l border-glass-edge py-fluid-md pr-fluid-md transition-[width] duration-motion-medium ease-motion-ease-out"
-      style={{ width: open ? WIDTH : 44 }}
+      aria-hidden={!visible}
+      className={`ds-ambient flex shrink-0 flex-col overflow-hidden border-l border-glass-edge transition-[width] duration-motion-medium ease-motion-ease-out ${visible ? 'py-fluid-md pr-fluid-md' : ''}`}
+      style={{ width: !visible ? 0 : shown ? WIDTH : 44, borderLeftWidth: visible ? 1 : 0 }}
     >
-      {open ? (
-        <GlassPanel padding="none" gap="none" className="min-h-0 flex-1 overflow-hidden">
-          <header className="relative flex items-center justify-center px-3 py-2">
-            <PanelTitle>Phone</PanelTitle>
-            <div className="absolute inset-y-0 right-2 flex items-center gap-1">
-              <Button variant="ghost" size="sm" aria-label="Reload phone" onClick={() => ref.current?.reload?.()}>
-                <RefreshCw size={13} />
-              </Button>
-              <Button variant="ghost" size="sm" aria-label="Hide phone" onClick={() => setOpen(false)}>
-                <PanelLeftOpen size={14} />
-              </Button>
-            </div>
-          </header>
-          <div className="relative min-h-0 flex-1 bg-surface-base">
-            {!loaded && (
-              <div className="ds-smallcaps absolute inset-0 flex items-center justify-center text-fluid-label text-content-muted normal-case">
-                Loading the phone…
-              </div>
-            )}
-            <webview
-              ref={ref as never}
-              src={CCP_URL}
-              partition={CCP_PARTITION}
-              allowpopups="true"
-              className="absolute inset-0"
-              style={{ display: 'flex', width: '100%', height: '100%' }}
-            />
-          </div>
-        </GlassPanel>
-      ) : (
+      {visible && !open && (
         <Button variant="ghost" size="sm" aria-label="Show phone" onClick={() => setOpen(true)} className="self-start">
           <PanelLeftClose size={14} />
         </Button>
       )}
+      <GlassPanel padding="none" gap="none" className={`min-h-0 flex-1 overflow-hidden ${shown ? '' : 'pointer-events-none absolute -left-[9999px] top-0 h-[600px] w-[380px] opacity-0'}`}>
+        <header className="relative flex items-center justify-center px-3 py-2">
+          <PanelTitle>Phone</PanelTitle>
+          <div className="absolute inset-y-0 right-2 flex items-center gap-1">
+            <Button variant="ghost" size="sm" aria-label="Reload phone" onClick={() => ref.current?.reload?.()}>
+              <RefreshCw size={13} />
+            </Button>
+            <Button variant="ghost" size="sm" aria-label="Hide phone" onClick={() => setOpen(false)}>
+              <PanelLeftOpen size={14} />
+            </Button>
+          </div>
+        </header>
+        <div className="relative min-h-0 flex-1 bg-surface-base">
+          {!loaded && (
+            <div className="ds-smallcaps absolute inset-0 flex items-center justify-center text-fluid-label text-content-muted normal-case">
+              Loading the phone…
+            </div>
+          )}
+          <webview
+            ref={ref as never}
+            src={CCP_URL}
+            partition={CCP_PARTITION}
+            allowpopups="true"
+            className="absolute inset-0"
+            style={{ display: 'flex', width: '100%', height: '100%' }}
+          />
+        </div>
+      </GlassPanel>
     </aside>
   );
 }

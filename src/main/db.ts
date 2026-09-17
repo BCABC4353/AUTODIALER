@@ -215,7 +215,7 @@ type JoinedRow = Attempt & { patient: string | null; balance: number | null };
 function priced(row: JoinedRow): ResultRow {
   if (!row.outcome) return { ...row, cost: 0, cost_estimated: false };
   const d = durationsFor(row.dial_seconds, row.answer_seconds, row.outcome, row.talk_seconds);
-  return { ...row, cost: attemptCost(d), cost_estimated: d.estimated };
+  return { ...row, cost: attemptCost(d, undefined, Boolean(row.agent_id)), cost_estimated: d.estimated };
 }
 
 export function listResults(db: Db, limit = 500): ResultRow[] {

@@ -27,7 +27,7 @@ import {
 } from './db';
 import { Aws, buildRequest } from './aws';
 import { buildDetail, fallbackSummary, fetchAnalysis, fetchCharacteristics, fetchRecording, findRecordingKey, keyFromLocation } from './insights';
-import { categoryLabel, categoryRule } from '../shared/categories';
+import { categoryEffect, categoryLabel, categoryRule } from '../shared/categories';
 import { evaluate, type DropReason } from '../shared/rules';
 import { normalizePhone } from '../shared/phone';
 import { outcomeKey, outcomeLabel, outcomeTone, EXPIRED_OUTCOME, HUMAN_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
@@ -43,6 +43,7 @@ import type {
   CostSummary,
   DialerEvent,
   DialerStatus,
+  FlaggedCall,
   InsightScope,
   InsightsReport,
   ResultDetail,
@@ -639,6 +640,9 @@ export class Dialer {
         this.logLine(`${rule.label}  ${who}${changed ? '  marked do not call' : ''}`, 'ok');
         handledNote = handledNote ?? rule.note;
         this.emit({ type: 'patients' });
+      } else if (rule.effect === 'paid') {
+        handledNote = rule.note;
+        this.logLine(`payment taken  ${who}`, 'ok');
       } else if (rule.effect === 'handled') {
         handledNote = handledNote ?? rule.note;
         this.logLine(`${rule.label}  ${who}  no further calls`, 'ok');
@@ -756,12 +760,19 @@ export class Dialer {
     const nonTalkShares: number[] = [];
     const agentWpms: number[] = [];
     const agentTalkShares: number[] = [];
+    const flagged: FlaggedCall[] = [];
     let detailed = 0;
     let analysed = 0;
     let calls = 0;
+    let humans = 0;
+    let payments = 0;
+    let handled = 0;
+    let dncAdded = 0;
+    let callbacks = 0;
     for (const a of attempts) {
       if (!a.outcome) continue;
       calls += 1;
+      if (a.outcome === HUMAN_OUTCOME) humans += 1;
       tally(amd, outcomeLabel(a.outcome));
       const detail = parseJson<ContactDetail>(a.detail_json);
       if (detail) {
@@ -782,7 +793,25 @@ export class Dialer {
         for (const turn of analysis.transcript) {
           if (turn.role === 'CUSTOMER' && turn.sentiment) tally(sentiment, turn.sentiment.toLowerCase());
         }
-        for (const c of analysis.categories) tally(categories, categoryLabel(c));
+        const flags: string[] = [];
+        let paid = false;
+        let wasHandled = false;
+        let wasDnc = false;
+        let wasCallback = false;
+        for (const c of analysis.categories) {
+          tally(categories, categoryLabel(c));
+          const effect = categoryEffect(c);
+          if (effect === 'paid') paid = true;
+          else if (effect === 'handled') wasHandled = true;
+          else if (effect === 'dnc') wasDnc = true;
+          else if (effect === 'callback') wasCallback = true;
+          else if (effect === 'flag') flags.push(categoryLabel(c));
+        }
+        if (paid) payments += 1;
+        if (wasHandled || paid) handled += 1;
+        if (wasDnc) dncAdded += 1;
+        if (wasCallback) callbacks += 1;
+        if (flags.length) flagged.push({ id: a.id, run: a.run, patient: patientByRun(this.db, a.run)?.patient ?? null, attemptedAt: a.attempted_at, flags });
         const ch = analysis.characteristics;
         if (ch) {
           if (ch.sentiment.customer !== null) customerScores.push(ch.sentiment.customer);
@@ -815,7 +844,49 @@ export class Dialer {
       categories: ranked(categories),
       qualityIssues: ranked(issues),
       agents: this.agentSummaries(attempts.filter((a) => a.agent_id)),
+      humans,
+      payments,
+      handled,
+      dncAdded,
+      callbacks,
+      flagged: flagged.sort((x, y) => y.attemptedAt.localeCompare(x.attemptedAt)).slice(0, 40),
+      cost: this.costSummary(attempts),
+      trend: this.trendFor(attempts, scope),
     };
+  }
+
+  private trendFor(attempts: Attempt[], scope: InsightScope): InsightsReport['trend'] {
+    const daily = scope !== 'today';
+    const buckets = daily ? (scope === 'week' ? 7 : 30) : 12;
+    const span = daily ? 86400_000 : 3600_000;
+    const start = new Date();
+    if (daily) {
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - (buckets - 1));
+    } else {
+      start.setMinutes(0, 0, 0);
+      start.setHours(start.getHours() - (buckets - 1));
+    }
+    const labels: string[] = [];
+    const counts = { attempts: [] as number[], human: [] as number[], payments: [] as number[] };
+    for (let i = 0; i < buckets; i += 1) {
+      const t = new Date(start.getTime() + i * span);
+      labels.push(daily ? `${t.getMonth() + 1}/${t.getDate()}` : `${String(t.getHours()).padStart(2, '0')}:00`);
+      counts.attempts.push(0);
+      counts.human.push(0);
+      counts.payments.push(0);
+    }
+    for (const a of attempts) {
+      const at = parseUtcText(a.attempted_at);
+      if (!at) continue;
+      const idx = Math.floor((at.getTime() - start.getTime()) / span);
+      if (idx < 0 || idx >= buckets) continue;
+      counts.attempts[idx] = (counts.attempts[idx] ?? 0) + 1;
+      if (a.outcome === HUMAN_OUTCOME) counts.human[idx] = (counts.human[idx] ?? 0) + 1;
+      const analysis = parseJson<CallAnalysis>(a.analysis_json);
+      if (analysis?.categories.some((c) => categoryEffect(c) === 'paid')) counts.payments[idx] = (counts.payments[idx] ?? 0) + 1;
+    }
+    return { labels, ...counts };
   }
 
   clearHistory(): number {
@@ -878,32 +949,31 @@ export class Dialer {
     };
   }
 
-  private costSummary(today: Attempt[]): CostSummary {
+  private costSummary(scoped: Attempt[]): CostSummary {
     let allTime = 0;
     for (const a of allAttempts(this.db)) {
       if (!a.outcome) continue;
-      allTime += attemptCost(durationsFor(a.dial_seconds, a.answer_seconds, a.outcome, a.talk_seconds));
+      allTime += attemptCost(durationsFor(a.dial_seconds, a.answer_seconds, a.outcome, a.talk_seconds), undefined, Boolean(a.agent_id));
     }
     let total = 0;
     let attempts = 0;
     let human = 0;
-    let humanCost = 0;
+    let payments = 0;
     let campaignSeconds = 0;
     let answeredSeconds = 0;
     let estimated = 0;
-    for (const a of today) {
+    for (const a of scoped) {
       if (!a.outcome) continue;
       const d = durationsFor(a.dial_seconds, a.answer_seconds, a.outcome, a.talk_seconds);
-      const cost = attemptCost(d);
+      const cost = attemptCost(d, undefined, Boolean(a.agent_id));
       attempts += 1;
       total += cost;
       campaignSeconds += d.dialSeconds;
       answeredSeconds += d.answerSeconds;
       if (d.estimated) estimated += 1;
-      if (a.outcome === HUMAN_OUTCOME) {
-        human += 1;
-        humanCost += cost;
-      }
+      if (a.outcome === HUMAN_OUTCOME) human += 1;
+      const analysis = parseJson<CallAnalysis>(a.analysis_json);
+      if (analysis?.categories.some((c) => categoryEffect(c) === 'paid')) payments += 1;
     }
     return {
       today: total,
@@ -911,6 +981,8 @@ export class Dialer {
       attempts,
       perAttempt: attempts ? total / attempts : 0,
       perHuman: human ? total / human : null,
+      perPayment: payments ? total / payments : null,
+      payments,
       campaignMinutes: campaignSeconds / 60,
       answeredMinutes: answeredSeconds / 60,
       estimatedAttempts: estimated,

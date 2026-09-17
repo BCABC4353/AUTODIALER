@@ -147,6 +147,14 @@ export interface InsightsReport {
   categories: { label: string; value: number }[];
   qualityIssues: { label: string; value: number }[];
   agents: AgentSummary[];
+  humans: number;
+  payments: number;
+  handled: number;
+  dncAdded: number;
+  callbacks: number;
+  flagged: FlaggedCall[];
+  cost: CostSummary;
+  trend: { labels: string[]; attempts: number[]; human: number[]; payments: number[] };
 }
 
 export interface CostSummary {
@@ -155,9 +163,19 @@ export interface CostSummary {
   attempts: number;
   perAttempt: number;
   perHuman: number | null;
+  perPayment: number | null;
+  payments: number;
   campaignMinutes: number;
   answeredMinutes: number;
   estimatedAttempts: number;
+}
+
+export interface FlaggedCall {
+  id: number;
+  run: string;
+  patient: string | null;
+  attemptedAt: string;
+  flags: string[];
 }
 
 export interface Stats {

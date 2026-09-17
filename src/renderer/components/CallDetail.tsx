@@ -6,7 +6,7 @@ import { formatLocal } from '@shared/time';
 import { outcomeLabel, outcomeTone } from '@shared/outcome';
 import { categoryLabel, categoryRule } from '@shared/categories';
 
-const EFFECT_TONE: Record<string, string> = { dnc: 'red', handled: 'emerald', callback: 'amber', flag: 'violet' };
+const EFFECT_TONE: Record<string, string> = { paid: 'emerald', dnc: 'red', handled: 'blue', callback: 'amber', flag: 'violet' };
 
 function scoreTone(score: number | null): string {
   if (score === null) return 'text-content-muted';

@@ -7,8 +7,8 @@ function minutes(value: number): string {
 }
 
 export function CostTile({ cost }: { cost: CostSummary | null }) {
-  const c = cost ?? { today: 0, allTime: 0, attempts: 0, perAttempt: 0, perHuman: null, campaignMinutes: 0, answeredMinutes: 0, estimatedAttempts: 0 };
-  const rateLine = `${formatCost(RATES.campaignPerMinute)}/min dialing + ${formatCost(RATES.voicePerMinute + RATES.telephonyPerMinute)}/min answered`;
+  const c = cost ?? { today: 0, allTime: 0, attempts: 0, perAttempt: 0, perHuman: null, perPayment: null, payments: 0, campaignMinutes: 0, answeredMinutes: 0, estimatedAttempts: 0 };
+  const rateLine = `${formatCost(RATES.campaignPerMinute)}/min dialing + ${formatCost(RATES.voicePerMinute + RATES.telephonyPerMinute)}/min answered${RATES.lensPerMinute ? ` + ${formatCost(RATES.lensPerMinute)}/min Contact Lens` : ', Contact Lens included'}`;
   return (
     <Tile title="Cost" sentence="Amazon Connect spend, prorated per second.">
       <div className="flex min-h-0 flex-1 flex-col justify-center gap-fluid-sm overflow-hidden">
@@ -20,7 +20,8 @@ export function CostTile({ cost }: { cost: CostSummary | null }) {
         </div>
         <ul className="ds-smallcaps flex min-h-0 flex-col gap-0.5 overflow-hidden">
           <li className="ds-chart-label leading-snug text-content-muted tabular-nums">
-            {formatCost(c.perAttempt)} per call · {c.perHuman === null ? 'no human yet' : `${formatCost(c.perHuman)} per human reached`}
+            {formatCost(c.perAttempt)} per call · {c.perHuman === null ? 'no human yet' : `${formatCost(c.perHuman)} per human`}
+            {c.perPayment === null ? '' : ` · ${formatCost(c.perPayment)} per payment`}
           </li>
           <li className="ds-chart-label leading-snug text-content-muted tabular-nums">
             {minutes(c.campaignMinutes)} min dialing · {minutes(c.answeredMinutes)} min answered · {formatCost(c.allTime)} all time
