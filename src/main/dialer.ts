@@ -387,7 +387,7 @@ export class Dialer {
     if (tokens.has(request.clientToken)) {
       insertAttempt(this.db, patient.run, '+1' + phone, stamp);
       this.stats.sent += 1;
-      this.logLine(`calling  ${this.describePatient(patient.run, patient.patient, patient.balance)}`, 'ok');
+      this.logLine(`sent to campaign  ${this.describePatient(patient.run, patient.patient, patient.balance)}`, 'ok');
     }
     for (const f of failed) {
       this.logLine(`could not queue  ${this.describePatient(patient.run, patient.patient, patient.balance)}  ${f.failureCode ?? ''}`, 'err');
@@ -485,7 +485,7 @@ export class Dialer {
           run: `RUN ${queued.run}`,
           balance: money(patient?.balance),
           ...patientFacts(patient),
-          status: 'dialing',
+          status: 'queued',
           tone: 'amber',
           kind: 'dialing',
         };
