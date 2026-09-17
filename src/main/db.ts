@@ -69,6 +69,10 @@ export function openDb(): Db {
   if (!columns.has('detail_json')) db.exec('ALTER TABLE attempts ADD COLUMN detail_json TEXT');
   if (!columns.has('analysis_json')) db.exec('ALTER TABLE attempts ADD COLUMN analysis_json TEXT');
   if (!columns.has('summary')) db.exec('ALTER TABLE attempts ADD COLUMN summary TEXT');
+  const patientColumns = new Set((db.prepare('PRAGMA table_info(patients)').all() as { name: string }[]).map((c) => c.name));
+  if (!patientColumns.has('trip_date')) db.exec('ALTER TABLE patients ADD COLUMN trip_date TEXT');
+  if (!patientColumns.has('schedule')) db.exec('ALTER TABLE patients ADD COLUMN schedule TEXT');
+  if (!patientColumns.has('event')) db.exec('ALTER TABLE patients ADD COLUMN event TEXT');
   return db;
 }
 
@@ -111,6 +115,9 @@ export interface PatientInput {
   patient: string;
   balance: number | null;
   tz: string | null;
+  tripDate: string | null;
+  schedule: string | null;
+  event: string | null;
 }
 
 export function listPatients(db: Db): Patient[] {
@@ -119,16 +126,16 @@ export function listPatients(db: Db): Patient[] {
 
 export function replacePatients(db: Db, rows: PatientInput[]): { added: number; dropped: number } {
   const stmt = db.prepare(
-    'INSERT INTO patients (run, phone, patient, balance, consent, dnc, tz) VALUES (?,?,?,?,1,0,?) ' +
+    'INSERT INTO patients (run, phone, patient, balance, consent, dnc, tz, trip_date, schedule, event) VALUES (?,?,?,?,1,0,?,?,?,?) ' +
       'ON CONFLICT(run) DO UPDATE SET phone=excluded.phone, patient=excluded.patient, ' +
-      'balance=excluded.balance, tz=excluded.tz, consent=1',
+      'balance=excluded.balance, tz=excluded.tz, consent=1, trip_date=excluded.trip_date, schedule=excluded.schedule, event=excluded.event',
   );
   const run = db.transaction((items: PatientInput[]) => {
     const before = new Set((db.prepare('SELECT run FROM patients WHERE consent=1').all() as { run: string }[]).map((r) => r.run));
     db.prepare('UPDATE patients SET consent=0').run();
     let added = 0;
     for (const r of items) {
-      stmt.run(r.run, r.phone, r.patient, r.balance, r.tz);
+      stmt.run(r.run, r.phone, r.patient, r.balance, r.tz, r.tripDate, r.schedule, r.event);
       if (!before.has(r.run)) added += 1;
       before.delete(r.run);
     }

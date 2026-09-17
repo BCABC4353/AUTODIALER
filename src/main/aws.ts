@@ -186,6 +186,7 @@ export function buildRequest(
   balance: number | null,
   now: Date,
   expiryMinutes: number,
+  tripDate: string | null = null,
 ): OutboundRequest {
   return {
     clientToken: `${run}-${Math.floor(now.getTime() / 1000)}`,
@@ -199,7 +200,7 @@ export function buildRequest(
           RUN: run,
           BALANCE: balance === null ? '' : balance.toFixed(2),
           BALANCE_SPOKEN: balance === null ? '' : String(Math.round(balance)),
-          TRIPDATE: '',
+          TRIPDATE: tripDate ?? '',
         },
       },
     },

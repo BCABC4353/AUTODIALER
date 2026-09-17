@@ -1,10 +1,17 @@
 export function normalizePhone(value: unknown): string | null {
   if (value === null || value === undefined) return null;
-  let digits = String(value).replace(/\D+/g, '');
+  const text = String(value).replace(/\bext\.?.*$/i, '');
+  let digits = text.replace(/\D+/g, '');
   if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
   if (digits.length !== 10) return null;
+  if (/^0+$/.test(digits)) return null;
   if ('01'.includes(digits[0] as string) || '01'.includes(digits[3] as string)) return null;
   return digits;
+}
+
+export function isPlaceholderPhone(value: unknown): boolean {
+  const digits = String(value ?? '').replace(/\D+/g, '');
+  return digits.length > 0 && /^0+$/.test(digits);
 }
 
 export function e164(digits: string): string {

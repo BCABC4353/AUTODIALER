@@ -10,6 +10,9 @@ export interface Patient {
   consent: number;
   dnc: number;
   tz: string | null;
+  trip_date: string | null;
+  schedule: string | null;
+  event: string | null;
 }
 
 export interface Attempt {
@@ -193,6 +196,9 @@ export interface NowState {
   name: string;
   run: string;
   balance: string;
+  tripDate: string;
+  schedule: string;
+  event: string;
   status: string;
   tone: Tone;
   kind: 'live' | 'dialing' | 'next' | 'idle';

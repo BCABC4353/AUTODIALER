@@ -132,7 +132,11 @@ function money(value: number | null | undefined): string {
 }
 
 function idleNow(): NowState {
-  return { contactId: null, name: '—', run: '', balance: '', status: 'idle', tone: 'slate', kind: 'idle' };
+  return { contactId: null, name: '—', run: '', balance: '', tripDate: '', schedule: '', event: '', status: 'idle', tone: 'slate', kind: 'idle' };
+}
+
+function patientFacts(patient: Patient | undefined | null): Pick<NowState, 'tripDate' | 'schedule' | 'event'> {
+  return { tripDate: patient?.trip_date ?? '', schedule: patient?.schedule ?? '', event: patient?.event ?? '' };
 }
 
 export class Dialer {
@@ -376,7 +380,7 @@ export class Dialer {
     }
     this.lastNoEligible = '';
     const phone = normalizePhone(patient.phone) as string;
-    const request: OutboundRequest = buildRequest(patient.run, phone, patient.patient, patient.balance, now, EXPIRY_MINUTES);
+    const request: OutboundRequest = buildRequest(patient.run, phone, patient.patient, patient.balance, now, EXPIRY_MINUTES, patient.trip_date);
     const { accepted, failed } = await this.aws.send([request]);
     const tokens = new Set(accepted.map((a) => a.clientToken));
     const stamp = toUtcText(new Date());
@@ -465,6 +469,7 @@ export class Dialer {
         name: live.attrs.PATIENT || patient?.patient || '?',
         run: live.attrs.RUN ? `RUN ${live.attrs.RUN}` : '',
         balance: live.attrs.BALANCE ? '$' + live.attrs.BALANCE : money(patient?.balance),
+        ...patientFacts(patient),
         status,
         tone: withAgent ? 'emerald' : 'orange',
         kind: 'live',
@@ -479,6 +484,7 @@ export class Dialer {
           name: patient?.patient || queued.run,
           run: `RUN ${queued.run}`,
           balance: money(patient?.balance),
+          ...patientFacts(patient),
           status: 'dialing',
           tone: 'amber',
           kind: 'dialing',
@@ -491,6 +497,7 @@ export class Dialer {
             name: upcoming.patient || upcoming.run,
             run: `RUN ${upcoming.run}`,
             balance: money(upcoming.balance),
+            ...patientFacts(upcoming),
             status: 'up next',
             tone: 'slate',
             kind: 'next',

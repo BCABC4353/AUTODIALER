@@ -3,7 +3,10 @@ import { normalizePhone } from '../shared/phone';
 import { tzForPhone } from '../shared/tz';
 import type { PatientInput } from './db';
 
-const COLUMNS = ['NAME', 'BALANCE', 'RUN NUMBER', 'PHONE'] as const;
+const LAYOUTS: { name: string; run: string; patient: string; phone: string; balance: string; tripDate?: string; schedule?: string; event?: string }[] = [
+  { name: 'dataflow', run: 'RUN', patient: 'PATIENT', phone: 'HOME PHONE', balance: 'BALANCE', tripDate: 'TRIP DATE', schedule: 'SCHEDULE', event: 'EVENT' },
+  { name: 'template', run: 'RUN NUMBER', patient: 'NAME', phone: 'PHONE', balance: 'BALANCE' },
+];
 
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -70,6 +73,19 @@ export function parseBalance(value: string | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+export function formatTripDate(value: string | undefined): string | null {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[2]}/${iso[3]}/${iso[1]}`;
+  const us = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (us) {
+    const year = (us[3] as string).length === 2 ? `20${us[3]}` : (us[3] as string);
+    return `${(us[1] as string).padStart(2, '0')}/${(us[2] as string).padStart(2, '0')}/${year}`;
+  }
+  return text;
+}
+
 export function loadCsv(file: string): PatientInput[] {
   const text = fs.readFileSync(file, 'utf8');
   const rows = parseCsv(text);
@@ -77,20 +93,25 @@ export function loadCsv(file: string): PatientInput[] {
   if (!header) throw new Error('empty file');
   const index = new Map<string, number>();
   header.forEach((h, i) => index.set(h.trim().toUpperCase(), i));
-  const missing = COLUMNS.filter((c) => !index.has(c));
-  if (missing.length) throw new Error('missing columns: ' + missing.join(', '));
-  const col = (row: string[], name: (typeof COLUMNS)[number]) => row[index.get(name) as number] ?? '';
+  const layout = LAYOUTS.find((l) => [l.run, l.patient, l.phone, l.balance].every((c) => index.has(c)));
+  if (!layout) {
+    throw new Error('unrecognised columns; expected RUN, PATIENT, HOME PHONE, BALANCE (or NAME, BALANCE, RUN NUMBER, PHONE)');
+  }
+  const col = (row: string[], name: string | undefined) => (name === undefined ? '' : (row[index.get(name) as number] ?? ''));
   const out: PatientInput[] = [];
   for (const row of rows.slice(1)) {
-    const run = col(row, 'RUN NUMBER').trim();
+    const run = col(row, layout.run).trim();
     if (!run) continue;
-    const phone = normalizePhone(col(row, 'PHONE'));
+    const phone = normalizePhone(col(row, layout.phone));
     out.push({
       run,
-      patient: col(row, 'NAME').trim(),
-      balance: parseBalance(col(row, 'BALANCE')),
+      patient: col(row, layout.patient).trim(),
+      balance: parseBalance(col(row, layout.balance)),
       phone,
       tz: tzForPhone(phone),
+      tripDate: formatTripDate(col(row, layout.tripDate)),
+      schedule: col(row, layout.schedule).trim() || null,
+      event: col(row, layout.event).trim() || null,
     });
   }
   return out;

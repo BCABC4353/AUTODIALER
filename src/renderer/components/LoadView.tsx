@@ -8,18 +8,21 @@ import { ActionBar } from './ActionBar';
 import { BlankDash, DataTable, type Column } from './DataTable';
 
 const COLUMNS: Column<Patient>[] = [
-  { id: 'run', label: 'Run', width: '9rem', mono: true, cell: (p) => p.run },
+  { id: 'run', label: 'Run', width: '8rem', mono: true, cell: (p) => p.run },
   { id: 'patient', label: 'Patient', cell: (p) => p.patient || <BlankDash /> },
   {
     id: 'phone',
     label: 'Phone',
     width: '10rem',
     mono: true,
-    cell: (p) => (p.phone ? formatPhone(p.phone) : <span className="text-status-danger">INVALID</span>),
+    cell: (p) => (p.phone ? formatPhone(p.phone) : <span className="text-content-muted">NO NUMBER</span>),
   },
-  { id: 'balance', label: 'Balance', width: '8rem', align: 'right', mono: true, cell: (p) => money(p.balance) || <BlankDash /> },
-  { id: 'tz', label: 'Time zone', width: '10rem', cell: (p) => tzLabel(p.tz) },
-  { id: 'dnc', label: 'DNC', width: '5rem', align: 'center', cell: (p) => (p.dnc ? <span className="text-accent-text">DNC</span> : '') },
+  { id: 'balance', label: 'Balance', width: '7rem', align: 'right', mono: true, cell: (p) => money(p.balance) || <BlankDash /> },
+  { id: 'trip', label: 'Trip date', width: '7rem', mono: true, cell: (p) => p.trip_date || <BlankDash /> },
+  { id: 'schedule', label: 'Schedule', width: '10rem', cell: (p) => p.schedule || <BlankDash /> },
+  { id: 'event', label: 'Event', width: '10rem', cell: (p) => p.event || <BlankDash /> },
+  { id: 'tz', label: 'Time zone', width: '8rem', cell: (p) => (p.phone ? tzLabel(p.tz) : <BlankDash />) },
+  { id: 'dnc', label: 'DNC', width: '4rem', align: 'center', cell: (p) => (p.dnc ? <span className="text-accent-text">DNC</span> : '') },
 ];
 
 export function LoadView({
@@ -62,7 +65,7 @@ export function LoadView({
             rowKey={(p) => p.run}
             rowClass={(p) => (p.dnc ? 'text-content-subtle' : !p.phone ? 'text-content-muted' : 'text-content-secondary')}
             onContextMenu={(p) => onToggleDnc(p.run)}
-            empty={{ title: 'No patients loaded', description: 'Open a CSV with NAME, BALANCE, RUN NUMBER and PHONE columns.' }}
+            empty={{ title: 'No patients loaded', description: 'Open the dataflow CSV: RUN, PATIENT, HOME PHONE, BALANCE, TRIP DATE, SCHEDULE, EVENT.' }}
           />
         </GlassPanel>
       </div>

@@ -35,7 +35,7 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
     }
     const { added, dropped } = replacePatients(dialer.db, rows);
     const invalid = rows.filter((r) => !r.phone).length;
-    const notes = [`${added} new`, `${dropped} removed`, `${invalid} invalid phone`].join(', ');
+    const notes = [`${added} new`, `${dropped} removed`, `${invalid} without a dialable number`].join(', ');
     dialer.logLine(`loaded ${rows.length} patients from ${path.basename(file)} (${notes})`, 'ok');
     dialer.requestTick();
     send({ type: 'patients' });

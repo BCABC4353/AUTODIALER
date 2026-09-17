@@ -10,7 +10,12 @@ export function NowCalling({ now, running }: { now: NowState | null; running: bo
   useEffect(() => {
     if (contactId && live) setFlashKey((k) => k + 1);
   }, [contactId, live]);
-  const state = now ?? { name: '—', run: '', balance: '', status: 'idle', tone: 'slate' as const, kind: 'idle' as const };
+  const state = now ?? { name: '—', run: '', balance: '', tripDate: '', schedule: '', event: '', status: 'idle', tone: 'slate' as const, kind: 'idle' as const };
+  const facts = [
+    { label: 'Trip', value: state.tripDate },
+    { label: 'Schedule', value: state.schedule },
+    { label: 'Event', value: state.event },
+  ].filter((f) => f.value);
   return (
     <GlassPanel padding="sm" gap="xs" className="@container/now relative shrink-0 overflow-hidden">
       <div key={flashKey} className={flashKey > 0 ? 'now-flash pointer-events-none absolute inset-0 rounded-lg' : 'hidden'} aria-hidden="true" />
@@ -35,6 +40,16 @@ export function NowCalling({ now, running }: { now: NowState | null; running: bo
           <span className="text-content-secondary">{state.run}</span>
           <span className="text-accent-text">{state.balance}</span>
         </div>
+        {facts.length > 0 && (
+          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 pt-1">
+            {facts.map((f) => (
+              <span key={f.label} className="flex items-baseline gap-2">
+                <span className="text-fluid-nano font-black uppercase tracking-wider text-content-muted">{f.label}</span>
+                <span className={`text-fluid-label font-bold text-content-secondary ${f.label === 'Trip' ? 'font-mono tabular-nums' : ''}`}>{f.value}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </GlassPanel>
   );
