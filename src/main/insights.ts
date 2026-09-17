@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/client-connect';
 import { GetObjectCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { AWS_REGION, CONNECT_INSTANCE_ID } from './aws';
-import type { CallAnalysis, ContactDetail, TranscriptTurn } from '../shared/types';
+import type { CallAnalysis, CallCharacteristics, ContactDetail, TranscriptTurn } from '../shared/types';
 
 export const RECORDING_BUCKET = 'bcabc-connect-638647552089';
 const RECORDING_PREFIX = 'recordings/';
@@ -128,7 +128,101 @@ export async function fetchAnalysis(contactId: string): Promise<CallAnalysis> {
     status = name === 'ResourceNotFoundException' ? 'pending' : 'unavailable';
   }
   if (status === 'ready' && transcript.length === 0) status = 'pending';
-  return { status, transcript, categories: [...categories], summary, fetchedAt: new Date().toISOString() };
+  return { status, transcript, categories: [...categories], summary, characteristics: null, actions: [], fetchedAt: new Date().toISOString() };
+}
+
+interface LensFile {
+  JobStatus?: string;
+  Categories?: { MatchedCategories?: string[] };
+  ConversationCharacteristics?: {
+    ContactSummary?: { PostContactSummary?: { Content?: string } };
+    TotalConversationDurationMillis?: number;
+    Sentiment?: {
+      OverallSentiment?: { AGENT?: number; CUSTOMER?: number };
+      SentimentByPeriod?: { QUARTER?: { AGENT?: { Score?: number }[]; CUSTOMER?: { Score?: number }[] } };
+    };
+    Interruptions?: { TotalCount?: number; TotalTimeMillis?: number; InterruptionsByInterrupter?: { AGENT?: unknown[]; CUSTOMER?: unknown[] } };
+    NonTalkTime?: { TotalTimeMillis?: number };
+    TalkSpeed?: { DetailsByParticipant?: { AGENT?: { AverageWordsPerMinute?: number }; CUSTOMER?: { AverageWordsPerMinute?: number } } };
+    TalkTime?: { DetailsByParticipant?: { AGENT?: { TotalTimeMillis?: number }; CUSTOMER?: { TotalTimeMillis?: number } } };
+  };
+  Transcript?: {
+    ParticipantId?: string;
+    LoudnessScore?: number[];
+    IssuesDetected?: { Text?: string }[];
+    OutcomesDetected?: { Text?: string }[];
+    ActionItemsDetected?: { Text?: string }[];
+  }[];
+}
+
+function sec(ms: number | undefined): number | null {
+  return typeof ms === 'number' ? Math.round(ms / 100) / 10 : null;
+}
+
+function meanLoudness(turns: LensFile['Transcript'], who: string): number | null {
+  const values: number[] = [];
+  for (const t of turns ?? []) if (t.ParticipantId === who) for (const v of t.LoudnessScore ?? []) values.push(v);
+  return values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : null;
+}
+
+export async function findAnalysisKey(contactId: string, at: Date | null): Promise<string | null> {
+  const prefixes: string[] = [];
+  if (at) {
+    const y = at.getUTCFullYear();
+    const m = String(at.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(at.getUTCDate()).padStart(2, '0');
+    prefixes.push(`${RECORDING_PREFIX}Analysis/Voice/${y}/${m}/${d}/`);
+  }
+  prefixes.push(`${RECORDING_PREFIX}Analysis/`);
+  for (const prefix of prefixes) {
+    let token: string | undefined;
+    do {
+      const res = await s3.send(new ListObjectsV2Command({ Bucket: RECORDING_BUCKET, Prefix: prefix, ContinuationToken: token, MaxKeys: 1000 }));
+      const hits = (res.Contents ?? []).filter((o) => o.Key && o.Key.includes(contactId) && o.Key.endsWith('.json') && !/Redacted/i.test(o.Key));
+      if (hits.length) return hits.sort((a, b) => (b.Key ?? '').localeCompare(a.Key ?? ''))[0]?.Key ?? null;
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+  }
+  return null;
+}
+
+export async function fetchCharacteristics(contactId: string, at: Date | null): Promise<{ characteristics: CallCharacteristics; summary: string | null; categories: string[] } | null> {
+  const key = await findAnalysisKey(contactId, at);
+  if (!key) return null;
+  const res = await s3.send(new GetObjectCommand({ Bucket: RECORDING_BUCKET, Key: key }));
+  if (!res.Body) return null;
+  const file = JSON.parse(await res.Body.transformToString()) as LensFile;
+  if (file.JobStatus && file.JobStatus !== 'COMPLETED') return null;
+  const cc = file.ConversationCharacteristics ?? {};
+  const quarters = cc.Sentiment?.SentimentByPeriod?.QUARTER;
+  const collect = (field: 'IssuesDetected' | 'OutcomesDetected' | 'ActionItemsDetected') =>
+    (file.Transcript ?? []).flatMap((t) => (t[field] ?? []).map((x) => x.Text ?? '').filter(Boolean));
+  const characteristics: CallCharacteristics = {
+    durationSeconds: sec(cc.TotalConversationDurationMillis),
+    talkSeconds: { agent: sec(cc.TalkTime?.DetailsByParticipant?.AGENT?.TotalTimeMillis), customer: sec(cc.TalkTime?.DetailsByParticipant?.CUSTOMER?.TotalTimeMillis) },
+    nonTalkSeconds: sec(cc.NonTalkTime?.TotalTimeMillis),
+    interruptions: {
+      count: cc.Interruptions?.TotalCount ?? 0,
+      seconds: sec(cc.Interruptions?.TotalTimeMillis) ?? 0,
+      byAgent: cc.Interruptions?.InterruptionsByInterrupter?.AGENT?.length ?? 0,
+      byCustomer: cc.Interruptions?.InterruptionsByInterrupter?.CUSTOMER?.length ?? 0,
+    },
+    wordsPerMinute: { agent: cc.TalkSpeed?.DetailsByParticipant?.AGENT?.AverageWordsPerMinute ?? null, customer: cc.TalkSpeed?.DetailsByParticipant?.CUSTOMER?.AverageWordsPerMinute ?? null },
+    loudness: { agent: meanLoudness(file.Transcript, 'AGENT'), customer: meanLoudness(file.Transcript, 'CUSTOMER') },
+    sentiment: { agent: cc.Sentiment?.OverallSentiment?.AGENT ?? null, customer: cc.Sentiment?.OverallSentiment?.CUSTOMER ?? null },
+    sentimentByQuarter: {
+      agent: (quarters?.AGENT ?? []).map((q) => q.Score ?? 0),
+      customer: (quarters?.CUSTOMER ?? []).map((q) => q.Score ?? 0),
+    },
+    issues: collect('IssuesDetected'),
+    outcomes: collect('OutcomesDetected'),
+    actionItems: collect('ActionItemsDetected'),
+  };
+  return {
+    characteristics,
+    summary: cc.ContactSummary?.PostContactSummary?.Content ?? null,
+    categories: file.Categories?.MatchedCategories ?? [],
+  };
 }
 
 export function fallbackSummary(analysis: CallAnalysis): string | null {

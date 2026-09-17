@@ -21,10 +21,13 @@ import {
   resolveAttempt,
   saveAnalysis,
   saveDetail,
+  setAgentNote,
+  setDnc,
   type Db,
 } from './db';
 import { Aws, buildRequest } from './aws';
-import { buildDetail, fallbackSummary, fetchAnalysis, fetchRecording, findRecordingKey, keyFromLocation } from './insights';
+import { buildDetail, fallbackSummary, fetchAnalysis, fetchCharacteristics, fetchRecording, findRecordingKey, keyFromLocation } from './insights';
+import { categoryLabel, categoryRule } from '../shared/categories';
 import { evaluate, type DropReason } from '../shared/rules';
 import { normalizePhone } from '../shared/phone';
 import { outcomeKey, outcomeLabel, outcomeTone, EXPIRED_OUTCOME, HUMAN_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
@@ -35,6 +38,7 @@ import type {
   AgentSummary,
   Attempt,
   CallAnalysis,
+  CallCharacteristics,
   ContactDetail,
   CostSummary,
   DialerEvent,
@@ -82,6 +86,22 @@ function ranked(map: Map<string, number>): { label: string; value: number }[] {
 function average(values: number[]): number | null {
   if (values.length === 0) return null;
   return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+function emptyCharacteristics(): CallCharacteristics {
+  return {
+    durationSeconds: null,
+    talkSeconds: { agent: null, customer: null },
+    nonTalkSeconds: null,
+    interruptions: { count: 0, seconds: 0, byAgent: 0, byCustomer: 0 },
+    wordsPerMinute: { agent: null, customer: null },
+    loudness: { agent: null, customer: null },
+    sentiment: { agent: null, customer: null },
+    sentimentByQuarter: { agent: [], customer: [] },
+    issues: [],
+    outcomes: [],
+    actionItems: [],
+  };
 }
 
 type Listener = (event: DialerEvent) => void;
@@ -574,18 +594,65 @@ export class Dialer {
 
   private async refreshAnalysis(attempt: Attempt, giveUp: boolean): Promise<CallAnalysis | null> {
     if (!attempt.contact_id) return null;
-    const analysis = await fetchAnalysis(attempt.contact_id);
+    const previous = parseJson<CallAnalysis>(attempt.analysis_json);
+    const analysis = previous?.status === 'ready' ? previous : await fetchAnalysis(attempt.contact_id);
     if (analysis.status === 'pending' && !giveUp) return analysis;
     if (analysis.status === 'pending') analysis.status = 'unavailable';
+    if (analysis.status === 'ready' && !analysis.characteristics) {
+      try {
+        const file = await fetchCharacteristics(attempt.contact_id, parseUtcText(attempt.attempted_at));
+        if (file) {
+          analysis.characteristics = file.characteristics;
+          if (!analysis.summary && file.summary) analysis.summary = file.summary;
+          for (const c of file.categories) if (!analysis.categories.includes(c)) analysis.categories.push(c);
+        } else if (giveUp) {
+          analysis.characteristics = emptyCharacteristics();
+        }
+      } catch (err) {
+        this.logLine(`analysis file: ${err instanceof Error ? err.message : String(err)}`, 'err');
+      }
+    }
+    const firstReady = analysis.status === 'ready' && previous?.status !== 'ready';
     const summary = analysis.status === 'ready' ? fallbackSummary(analysis) : null;
+    if (analysis.status === 'ready') analysis.actions = this.applyCategories(attempt, analysis, summary);
     saveAnalysis(this.db, attempt.id, JSON.stringify(analysis), summary, true);
-    if (analysis.status === 'ready') {
+    if (firstReady) {
       this.logLine(`transcript ready  ${this.describePatient(attempt.run)}${summary ? '  ' + summary : ''}`, 'ok');
       this.nextCache.at = 0;
     }
     this.emit({ type: 'analysis', id: attempt.id });
     this.emit({ type: 'results' });
     return analysis;
+  }
+
+  private applyCategories(attempt: Attempt, analysis: CallAnalysis, summary: string | null): string[] {
+    const done = new Set(analysis.actions ?? []);
+    const actions = [...done];
+    const who = this.describePatient(attempt.run);
+    let handledNote: string | null = null;
+    for (const name of analysis.categories) {
+      const rule = categoryRule(name);
+      if (!rule || done.has(name)) continue;
+      actions.push(name);
+      if (rule.effect === 'dnc') {
+        const changed = setDnc(this.db, attempt.run, 1);
+        this.logLine(`${rule.label}  ${who}${changed ? '  marked do not call' : ''}`, 'ok');
+        handledNote = handledNote ?? rule.note;
+        this.emit({ type: 'patients' });
+      } else if (rule.effect === 'handled') {
+        handledNote = handledNote ?? rule.note;
+        this.logLine(`${rule.label}  ${who}  no further calls`, 'ok');
+      } else if (rule.effect === 'callback') {
+        this.logLine(`${rule.label}  ${who}  stays on the list`);
+      } else {
+        this.logLine(`${rule.label}  ${who}  flagged for review`);
+      }
+    }
+    if (handledNote) {
+      const current = attemptById(this.db, attempt.id)?.agent_note ?? '';
+      if (!current || current === summary) setAgentNote(this.db, attempt.id, summary ? `${handledNote}. ${summary}` : handledNote);
+    }
+    return actions;
   }
 
   async resultDetail(id: number): Promise<ResultDetail> {
@@ -684,6 +751,11 @@ export class Dialer {
     const sentiment = new Map<string, number>();
     const categories = new Map<string, number>();
     const issues = new Map<string, number>();
+    const customerScores: number[] = [];
+    const interruptionCounts: number[] = [];
+    const nonTalkShares: number[] = [];
+    const agentWpms: number[] = [];
+    const agentTalkShares: number[] = [];
     let detailed = 0;
     let analysed = 0;
     let calls = 0;
@@ -710,7 +782,17 @@ export class Dialer {
         for (const turn of analysis.transcript) {
           if (turn.role === 'CUSTOMER' && turn.sentiment) tally(sentiment, turn.sentiment.toLowerCase());
         }
-        for (const c of analysis.categories) tally(categories, c);
+        for (const c of analysis.categories) tally(categories, categoryLabel(c));
+        const ch = analysis.characteristics;
+        if (ch) {
+          if (ch.sentiment.customer !== null) customerScores.push(ch.sentiment.customer);
+          interruptionCounts.push(ch.interruptions.count);
+          if (ch.durationSeconds && ch.nonTalkSeconds !== null) nonTalkShares.push(ch.nonTalkSeconds / ch.durationSeconds);
+          if (ch.wordsPerMinute.agent !== null) agentWpms.push(ch.wordsPerMinute.agent);
+          const a = ch.talkSeconds.agent ?? 0;
+          const c = ch.talkSeconds.customer ?? 0;
+          if (a + c > 0) agentTalkShares.push(a / (a + c));
+        }
       }
     }
     return {
@@ -722,6 +804,11 @@ export class Dialer {
       avgGreetingSeconds: average(greetings),
       avgTalkSeconds: average(talks),
       avgQuality: average(qualities),
+      avgCustomerSentiment: average(customerScores),
+      avgInterruptions: average(interruptionCounts),
+      avgNonTalkShare: average(nonTalkShares),
+      avgAgentWpm: average(agentWpms),
+      talkShareAgent: average(agentTalkShares),
       amd: ranked(amd),
       disconnects: ranked(disconnects),
       sentiment: ranked(sentiment),

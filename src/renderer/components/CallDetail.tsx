@@ -1,9 +1,92 @@
 import { useEffect, useRef, useState } from 'react';
 import { Play, RefreshCw, X } from 'lucide-react';
 import { Button, Pill, SectionHeader } from '@ds/index.js';
-import type { ResultDetail, ResultRow } from '@shared/types';
+import type { CallCharacteristics, ResultDetail, ResultRow } from '@shared/types';
 import { formatLocal } from '@shared/time';
 import { outcomeLabel, outcomeTone } from '@shared/outcome';
+import { categoryLabel, categoryRule } from '@shared/categories';
+
+const EFFECT_TONE: Record<string, string> = { dnc: 'red', handled: 'emerald', callback: 'amber', flag: 'violet' };
+
+function scoreTone(score: number | null): string {
+  if (score === null) return 'text-content-muted';
+  if (score >= 1.5) return 'text-chip-emerald-fg';
+  if (score <= -1.5) return 'text-chip-org-fg';
+  return 'text-content-secondary';
+}
+
+function QuarterTrend({ scores, label }: { scores: number[]; label: string }) {
+  if (scores.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-fluid-micro font-black uppercase tracking-wider text-content-muted">{label}</span>
+      <div className="flex h-8 items-end gap-1">
+        {scores.map((s, i) => {
+          const h = Math.max(8, (Math.abs(s) / 5) * 100);
+          const color = s > 0.5 ? 'var(--chart-series-2)' : s < -0.5 ? 'var(--chart-series-1)' : 'var(--chart-series-4)';
+          return <span key={i} title={`quarter ${i + 1}: ${s > 0 ? '+' : ''}${s}`} className="ds-chart-mark flex-1 rounded-t-sm" style={{ height: `${h}%`, '--chart-mark-c': color } as React.CSSProperties} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Characteristics({ ch }: { ch: CallCharacteristics }) {
+  const agentTalk = ch.talkSeconds.agent ?? 0;
+  const patientTalk = ch.talkSeconds.customer ?? 0;
+  const total = agentTalk + patientTalk;
+  const agentShare = total > 0 ? Math.round((agentTalk / total) * 100) : null;
+  return (
+    <section className="flex flex-col gap-2">
+      <SectionHeader as="h4" size="eyebrow">
+        Conversation
+      </SectionHeader>
+      {agentShare !== null && (
+        <div className="flex flex-col gap-1">
+          <div className="flex justify-between text-fluid-micro font-black uppercase tracking-wider text-content-muted">
+            <span>agent {agentShare}%</span>
+            <span>patient {100 - agentShare}%</span>
+          </div>
+          <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay">
+            <span className="h-full" style={{ width: `${agentShare}%`, background: 'var(--chart-series-3)' }} />
+            <span className="h-full flex-1" style={{ background: 'var(--chart-seq-4)' }} />
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-x-3 gap-y-2">
+        <Fact label="Sentiment" value={ch.sentiment.customer === null ? '—' : `${ch.sentiment.customer > 0 ? '+' : ''}${ch.sentiment.customer}`} tone={scoreTone(ch.sentiment.customer)} />
+        <Fact label="Agent tone" value={ch.sentiment.agent === null ? '—' : `${ch.sentiment.agent > 0 ? '+' : ''}${ch.sentiment.agent}`} tone={scoreTone(ch.sentiment.agent)} />
+        <Fact label="Silence" value={ch.nonTalkSeconds === null ? '—' : `${ch.nonTalkSeconds}s`} />
+        <Fact label="Interruptions" value={`${ch.interruptions.count} (${ch.interruptions.byAgent} agent)`} tone={ch.interruptions.count > 2 ? 'text-chip-amber-fg' : undefined} />
+        <Fact label="Pace" value={ch.wordsPerMinute.agent === null && ch.wordsPerMinute.customer === null ? '—' : `${ch.wordsPerMinute.agent ?? '–'} / ${ch.wordsPerMinute.customer ?? '–'} wpm`} />
+        <Fact label="Loudness" value={ch.loudness.agent === null && ch.loudness.customer === null ? '—' : `${ch.loudness.agent ?? '–'} / ${ch.loudness.customer ?? '–'}`} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <QuarterTrend scores={ch.sentimentByQuarter.customer} label="patient sentiment by quarter" />
+        <QuarterTrend scores={ch.sentimentByQuarter.agent} label="agent sentiment by quarter" />
+      </div>
+      {(ch.issues.length > 0 || ch.outcomes.length > 0 || ch.actionItems.length > 0) && (
+        <ul className="ds-smallcaps flex flex-col gap-1 text-fluid-label normal-case">
+          {ch.issues.map((t, i) => (
+            <li key={`i${i}`} className="text-chip-org-fg">
+              issue · {t}
+            </li>
+          ))}
+          {ch.outcomes.map((t, i) => (
+            <li key={`o${i}`} className="text-chip-emerald-fg">
+              outcome · {t}
+            </li>
+          ))}
+          {ch.actionItems.map((t, i) => (
+            <li key={`a${i}`} className="text-chip-blue-fg">
+              action · {t}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 const SENTIMENT_CLASS: Record<string, string> = {
   POSITIVE: 'text-chip-emerald-fg',
@@ -172,14 +255,16 @@ export function CallDetail({ row, analysisTick, onClose }: { row: ResultRow; ana
           {analysis && analysis.categories.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {analysis.categories.map((c) => (
-                <Pill key={c} tone="violet" size="sm" border>
-                  {c}
+                <Pill key={c} tone={EFFECT_TONE[categoryRule(c)?.effect ?? ''] ?? 'violet'} size="sm" intensity={analysis.actions.includes(c) ? 'solid' : 'subtle'} border={!analysis.actions.includes(c)}>
+                  {categoryLabel(c)}
                 </Pill>
               ))}
             </div>
           )}
         </section>
       )}
+
+      {analysis?.characteristics && <Characteristics ch={analysis.characteristics} />}
 
       {analysis && analysis.transcript.length > 0 && (
         <section className="flex min-h-0 flex-col gap-2">

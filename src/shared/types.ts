@@ -72,11 +72,32 @@ export interface TranscriptTurn {
   at: string | null;
 }
 
+export interface SideMetric {
+  agent: number | null;
+  customer: number | null;
+}
+
+export interface CallCharacteristics {
+  durationSeconds: number | null;
+  talkSeconds: SideMetric;
+  nonTalkSeconds: number | null;
+  interruptions: { count: number; seconds: number; byAgent: number; byCustomer: number };
+  wordsPerMinute: SideMetric;
+  loudness: SideMetric;
+  sentiment: SideMetric;
+  sentimentByQuarter: { agent: number[]; customer: number[] };
+  issues: string[];
+  outcomes: string[];
+  actionItems: string[];
+}
+
 export interface CallAnalysis {
   status: 'pending' | 'ready' | 'unavailable';
   transcript: TranscriptTurn[];
   categories: string[];
   summary: string | null;
+  characteristics: CallCharacteristics | null;
+  actions: string[];
   fetchedAt: string;
 }
 
@@ -115,6 +136,11 @@ export interface InsightsReport {
   avgGreetingSeconds: number | null;
   avgTalkSeconds: number | null;
   avgQuality: number | null;
+  avgCustomerSentiment: number | null;
+  avgInterruptions: number | null;
+  avgNonTalkShare: number | null;
+  avgAgentWpm: number | null;
+  talkShareAgent: number | null;
   amd: { label: string; value: number }[];
   disconnects: { label: string; value: number }[];
   sentiment: { label: string; value: number }[];

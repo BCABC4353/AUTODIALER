@@ -121,6 +121,18 @@ export function InsightsView({ resultsTick }: { resultsTick: number }) {
             />
             <OutcomeBars title="Outcomes" sentence="Machine-detection verdicts across the scope." replayKey={`${scope}-${r?.calls ?? 0}`} entries={(r?.amd ?? []).slice(0, 6).map((e) => ({ label: e.label, value: e.value, color: e.label.includes('human') ? 'var(--chart-series-2)' : e.label.includes('voicemail') ? 'var(--chart-seq-4)' : 'var(--chart-series-1)' }))} />
             <OutcomeBars title="Sentiment" sentence="Patient turns by Contact Lens sentiment." replayKey={`${scope}-${r?.analysed ?? 0}`} entries={(r?.sentiment ?? []).map((e) => ({ label: e.label, value: e.value, color: SENTIMENT_COLOR[e.label] ?? 'var(--chart-other)' }))} />
+            <CalloutTile
+              title="Conversation"
+              sentence="Patient sentiment score, -5 to +5, and how calls flow."
+              value={r?.avgCustomerSentiment === null || r?.avgCustomerSentiment === undefined ? '—' : `${r.avgCustomerSentiment > 0 ? '+' : ''}${r.avgCustomerSentiment.toFixed(1)}`}
+              label="patient sentiment"
+              lines={[
+                r?.talkShareAgent === null || r?.talkShareAgent === undefined ? 'no talk-share data yet' : `agent talks ${Math.round(r.talkShareAgent * 100)}% of the time`,
+                r?.avgInterruptions === null || r?.avgInterruptions === undefined ? '' : `${r.avgInterruptions.toFixed(1)} interruptions per call`,
+                r?.avgNonTalkShare === null || r?.avgNonTalkShare === undefined ? '' : `${Math.round(r.avgNonTalkShare * 100)}% silence`,
+                r?.avgAgentWpm === null || r?.avgAgentWpm === undefined ? '' : `agent pace ${Math.round(r.avgAgentWpm)} words per minute`,
+              ].filter(Boolean)}
+            />
           </div>
         </GlassPanel>
 

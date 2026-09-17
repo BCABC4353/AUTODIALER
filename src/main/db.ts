@@ -91,7 +91,7 @@ export function attemptsAwaitingAnalysis(db: Db, sinceUtcText: string): Attempt[
   return db
     .prepare(
       'SELECT * FROM attempts WHERE outcome IS NOT NULL AND contact_id IS NOT NULL AND agent_id IS NOT NULL ' +
-        'AND attempted_at>=? AND (analysis_json IS NULL OR analysis_json LIKE \'%"status":"pending"%\') ORDER BY attempted_at',
+        'AND attempted_at>=? AND (analysis_json IS NULL OR analysis_json LIKE \'%"status":"pending"%\' OR analysis_json LIKE \'%"characteristics":null%\') ORDER BY attempted_at',
     )
     .all(sinceUtcText) as Attempt[];
 }
@@ -139,6 +139,17 @@ export function replacePatients(db: Db, rows: PatientInput[]): { added: number; 
 
 export function toggleDnc(db: Db, run: string): void {
   db.prepare('UPDATE patients SET dnc = CASE dnc WHEN 1 THEN 0 ELSE 1 END WHERE run=?').run(run);
+}
+
+export function setDnc(db: Db, run: string, value: number): boolean {
+  const before = db.prepare('SELECT dnc FROM patients WHERE run=?').get(run) as { dnc: number } | undefined;
+  if (!before || before.dnc === value) return false;
+  db.prepare('UPDATE patients SET dnc=? WHERE run=?').run(value, run);
+  return true;
+}
+
+export function setAgentNote(db: Db, id: number, note: string): void {
+  db.prepare('UPDATE attempts SET agent_note=? WHERE id=?').run(note, id);
 }
 
 export function attemptsSince(db: Db, run: string, sinceUtcText: string): number {
