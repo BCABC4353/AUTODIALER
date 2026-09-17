@@ -6,6 +6,7 @@ publish:
   provider: github
   owner: BCABC4353
   repo: AUTODIALER
+  releaseType: release
 
 directories:
   output: build-output
