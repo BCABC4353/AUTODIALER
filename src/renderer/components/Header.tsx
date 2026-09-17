@@ -3,12 +3,13 @@ import type { DialerStatus, Tone } from '@shared/types';
 import { LOGO_SRC } from '../lib/logo';
 import { MarsLight } from './MarsLight';
 
-export type View = 'load' | 'dial' | 'results';
+export type View = 'load' | 'dial' | 'results' | 'insights';
 
 const VIEWS: { id: View; label: string }[] = [
   { id: 'load', label: 'Load' },
   { id: 'dial', label: 'Dial' },
   { id: 'results', label: 'Results' },
+  { id: 'insights', label: 'Insights' },
 ];
 
 function stateChip(status: DialerStatus | null): { label: string; tone: Tone; solid: boolean } {

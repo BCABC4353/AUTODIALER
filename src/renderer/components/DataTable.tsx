@@ -16,6 +16,8 @@ export function DataTable<T>({
   rowKey,
   rowClass,
   onContextMenu,
+  onSelect,
+  selectedKey,
   empty,
 }: {
   columns: Column<T>[];
@@ -23,6 +25,8 @@ export function DataTable<T>({
   rowKey: (row: T) => string;
   rowClass?: (row: T) => string;
   onContextMenu?: (row: T) => void;
+  onSelect?: (row: T) => void;
+  selectedKey?: string | null;
   empty: { title: string; description?: string };
 }) {
   return (
@@ -44,28 +48,36 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr
-              key={rowKey(row)}
-              onContextMenu={(e) => {
-                if (!onContextMenu) return;
-                e.preventDefault();
-                onContextMenu(row);
-              }}
-              className={`ds-table-row cursor-default transition-colors hover:bg-row-hover ${rowClass ? rowClass(row) : ''}`}
-            >
-              {columns.map((c) => (
-                <td
-                  key={c.id}
-                  className={`whitespace-nowrap px-3 text-fluid-nano font-bold uppercase tabular-nums ${c.mono ? 'font-mono normal-case' : ''} ${
-                    c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left'
-                  }`}
-                >
-                  {c.cell(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const key = rowKey(row);
+            const selected = selectedKey !== undefined && selectedKey === key;
+            return (
+              <tr
+                key={key}
+                aria-selected={selected || undefined}
+                onClick={onSelect ? () => onSelect(row) : undefined}
+                onContextMenu={(e) => {
+                  if (!onContextMenu) return;
+                  e.preventDefault();
+                  onContextMenu(row);
+                }}
+                className={`ds-table-row transition-colors ${onSelect ? 'cursor-pointer' : 'cursor-default'} ${
+                  selected ? 'bg-row-active' : 'hover:bg-row-hover'
+                } ${rowClass ? rowClass(row) : ''}`}
+              >
+                {columns.map((c) => (
+                  <td
+                    key={c.id}
+                    className={`whitespace-nowrap px-3 text-fluid-nano font-bold uppercase tabular-nums ${c.mono ? 'font-mono normal-case' : ''} ${
+                      c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left'
+                    }`}
+                  >
+                    {c.cell(row)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {rows.length === 0 && (

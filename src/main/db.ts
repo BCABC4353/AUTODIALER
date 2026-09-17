@@ -65,7 +65,44 @@ export function openDb(): Db {
   const columns = new Set((db.prepare('PRAGMA table_info(attempts)').all() as { name: string }[]).map((c) => c.name));
   if (!columns.has('dial_seconds')) db.exec('ALTER TABLE attempts ADD COLUMN dial_seconds INTEGER');
   if (!columns.has('answer_seconds')) db.exec('ALTER TABLE attempts ADD COLUMN answer_seconds INTEGER');
+  if (!columns.has('agent_id')) db.exec('ALTER TABLE attempts ADD COLUMN agent_id TEXT');
+  if (!columns.has('detail_json')) db.exec('ALTER TABLE attempts ADD COLUMN detail_json TEXT');
+  if (!columns.has('analysis_json')) db.exec('ALTER TABLE attempts ADD COLUMN analysis_json TEXT');
+  if (!columns.has('summary')) db.exec('ALTER TABLE attempts ADD COLUMN summary TEXT');
   return db;
+}
+
+export function attemptById(db: Db, id: number): Attempt | undefined {
+  return db.prepare('SELECT * FROM attempts WHERE id=?').get(id) as Attempt | undefined;
+}
+
+export function saveDetail(db: Db, id: number, detailJson: string, agentId: string | null): void {
+  db.prepare('UPDATE attempts SET detail_json=?, agent_id=? WHERE id=?').run(detailJson, agentId, id);
+}
+
+export function saveAnalysis(db: Db, id: number, analysisJson: string, summary: string | null, fillNote: boolean): void {
+  db.prepare('UPDATE attempts SET analysis_json=?, summary=? WHERE id=?').run(analysisJson, summary, id);
+  if (fillNote && summary) {
+    db.prepare("UPDATE attempts SET agent_note=? WHERE id=? AND (agent_note IS NULL OR agent_note='')").run(summary, id);
+  }
+}
+
+export function attemptsAwaitingAnalysis(db: Db, sinceUtcText: string): Attempt[] {
+  return db
+    .prepare(
+      'SELECT * FROM attempts WHERE outcome IS NOT NULL AND contact_id IS NOT NULL AND agent_id IS NOT NULL ' +
+        'AND attempted_at>=? AND (analysis_json IS NULL OR analysis_json LIKE \'%"status":"pending"%\') ORDER BY attempted_at',
+    )
+    .all(sinceUtcText) as Attempt[];
+}
+
+export function attemptsWithAgent(db: Db, sinceUtcText: string | null): Attempt[] {
+  if (sinceUtcText === null) {
+    return db.prepare('SELECT * FROM attempts WHERE agent_id IS NOT NULL ORDER BY attempted_at').all() as Attempt[];
+  }
+  return db
+    .prepare('SELECT * FROM attempts WHERE agent_id IS NOT NULL AND attempted_at>=? ORDER BY attempted_at')
+    .all(sinceUtcText) as Attempt[];
 }
 
 export interface PatientInput {

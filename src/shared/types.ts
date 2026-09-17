@@ -23,6 +23,10 @@ export interface Attempt {
   agent_note: string | null;
   dial_seconds: number | null;
   answer_seconds: number | null;
+  agent_id: string | null;
+  detail_json: string | null;
+  analysis_json: string | null;
+  summary: string | null;
 }
 
 export interface ResultRow extends Attempt {
@@ -30,6 +34,93 @@ export interface ResultRow extends Attempt {
   balance: number | null;
   cost: number;
   cost_estimated: boolean;
+}
+
+export interface ContactAgent {
+  id: string;
+  username: string | null;
+  connectedAt: string | null;
+  talkSeconds: number | null;
+  holdSeconds: number;
+  holdCount: number;
+  acwSeconds: number | null;
+  device: string | null;
+}
+
+export interface ContactDetail {
+  contactId: string;
+  campaignId: string | null;
+  initiatedAt: string | null;
+  ringStartAt: string | null;
+  answeredAt: string | null;
+  disconnectedAt: string | null;
+  ringSeconds: number | null;
+  answeredSeconds: number | null;
+  greetingSeconds: number | null;
+  amd: string | null;
+  disconnectReason: string | null;
+  agent: ContactAgent | null;
+  quality: { agent: number | null; customer: number | null; issues: string[] };
+  recordingLocation: string | null;
+}
+
+export interface TranscriptTurn {
+  id: string;
+  role: string;
+  text: string;
+  sentiment: string | null;
+  at: string | null;
+}
+
+export interface CallAnalysis {
+  status: 'pending' | 'ready' | 'unavailable';
+  transcript: TranscriptTurn[];
+  categories: string[];
+  summary: string | null;
+  fetchedAt: string;
+}
+
+export interface ResultDetail {
+  id: number;
+  detail: ContactDetail | null;
+  analysis: CallAnalysis | null;
+  note: string | null;
+  recordingAvailable: boolean;
+}
+
+export interface AgentSummary {
+  agentId: string;
+  username: string;
+  calls: number;
+  humans: number;
+  talkSeconds: number;
+  holdSeconds: number;
+  acwSeconds: number;
+  quality: number | null;
+}
+
+export interface AgentReport {
+  today: AgentSummary[];
+  allTime: AgentSummary[];
+}
+
+export type InsightScope = 'today' | 'week' | 'all';
+
+export interface InsightsReport {
+  scope: InsightScope;
+  calls: number;
+  detailed: number;
+  analysed: number;
+  avgRingSeconds: number | null;
+  avgGreetingSeconds: number | null;
+  avgTalkSeconds: number | null;
+  avgQuality: number | null;
+  amd: { label: string; value: number }[];
+  disconnects: { label: string; value: number }[];
+  sentiment: { label: string; value: number }[];
+  categories: { label: string; value: number }[];
+  qualityIssues: { label: string; value: number }[];
+  agents: AgentSummary[];
 }
 
 export interface CostSummary {
@@ -110,6 +201,7 @@ export type DialerEvent =
   | { type: 'results' }
   | { type: 'patients' }
   | { type: 'error'; title: string; message: string }
+  | { type: 'analysis'; id: number }
   | { type: 'update'; state: ForceUpdateState };
 
 export interface DialerApi {
@@ -129,6 +221,10 @@ export interface DialerApi {
     exportCsv: () => Promise<{ file: string; rows: number } | null>;
     clear: () => Promise<number>;
     session: () => Promise<SessionStats>;
+    detail: (id: number) => Promise<ResultDetail>;
+    recording: (id: number) => Promise<Uint8Array | null>;
+    agents: () => Promise<AgentReport>;
+    insights: (scope: InsightScope) => Promise<InsightsReport>;
   };
   app: {
     version: () => Promise<string>;

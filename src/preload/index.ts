@@ -18,6 +18,10 @@ const api: DialerApi = {
     exportCsv: () => ipcRenderer.invoke('results:export'),
     clear: () => ipcRenderer.invoke('results:clear'),
     session: () => ipcRenderer.invoke('results:session'),
+    detail: (id) => ipcRenderer.invoke('results:detail', id),
+    recording: (id) => ipcRenderer.invoke('results:recording', id),
+    agents: () => ipcRenderer.invoke('results:agents'),
+    insights: (scope) => ipcRenderer.invoke('results:insights', scope),
   },
   app: {
     version: () => ipcRenderer.invoke('app:version'),
