@@ -4,6 +4,7 @@ import type { ResultRow } from '@shared/types';
 import { formatPhone, stripE164 } from '@shared/phone';
 import { formatLocal } from '@shared/time';
 import { outcomeLabel, outcomeTone } from '@shared/outcome';
+import { formatCost } from '@shared/pricing';
 import { plural } from '../lib/format';
 import { ActionBar } from './ActionBar';
 import { BlankDash, DataTable, type Column } from './DataTable';
@@ -27,6 +28,15 @@ const COLUMNS: Column<ResultRow>[] = [
     cell: (r) => <span className={r.outcome ? TONE_TEXT[outcomeTone(r.outcome)] : 'text-content-muted'}>{outcomeLabel(r.outcome)}</span>,
   },
   { id: 'talk', label: 'Talk', width: '5rem', align: 'right', mono: true, cell: (r) => (r.talk_seconds === null ? <BlankDash /> : `${r.talk_seconds}s`) },
+  { id: 'dial', label: 'Dial', width: '5rem', align: 'right', mono: true, cell: (r) => (r.dial_seconds === null ? <BlankDash /> : `${r.dial_seconds}s`) },
+  {
+    id: 'cost',
+    label: 'Cost',
+    width: '6rem',
+    align: 'right',
+    mono: true,
+    cell: (r) => (r.outcome ? <span title={r.cost_estimated ? 'estimated from the outcome; durations were not recorded' : undefined}>{formatCost(r.cost)}{r.cost_estimated ? '*' : ''}</span> : <BlankDash />),
+  },
   { id: 'contact', label: 'Contact', width: '20rem', mono: true, cell: (r) => r.contact_id || <BlankDash /> },
 ];
 
@@ -54,7 +64,9 @@ export function ResultsView({
               <Download size={13} />
               Export CSV
             </Button>
-            <span className="text-fluid-label font-bold text-content-muted tabular-nums">{plural(results.length, 'attempt')}</span>
+            <span className="text-fluid-label font-bold text-content-muted tabular-nums">
+              {plural(results.length, 'attempt')} · {formatCost(results.reduce((sum, r) => sum + (r.outcome ? r.cost : 0), 0))} shown
+            </span>
           </>
         }
         right={

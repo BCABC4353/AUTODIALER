@@ -3,6 +3,7 @@ import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Attempt, Patient, ResultRow } from '../shared/types';
+import { attemptCost, durationsFor } from '../shared/pricing';
 
 const LEGACY_DIR = 'C:\\Users\\Brendan Cameron\\Desktop\\AUTODIALER';
 
@@ -61,6 +62,9 @@ export function openDb(): Db {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  const columns = new Set((db.prepare('PRAGMA table_info(attempts)').all() as { name: string }[]).map((c) => c.name));
+  if (!columns.has('dial_seconds')) db.exec('ALTER TABLE attempts ADD COLUMN dial_seconds INTEGER');
+  if (!columns.has('answer_seconds')) db.exec('ALTER TABLE attempts ADD COLUMN answer_seconds INTEGER');
   return db;
 }
 
@@ -134,14 +138,12 @@ export function resolveAttempt(
   outcome: string,
   talkSeconds: number | null,
   agentNote: string | null,
+  dialSeconds: number | null,
+  answerSeconds: number | null,
 ): void {
-  db.prepare('UPDATE attempts SET contact_id=?, outcome=?, talk_seconds=?, agent_note=? WHERE id=?').run(
-    contactId,
-    outcome,
-    talkSeconds,
-    agentNote,
-    id,
-  );
+  db.prepare(
+    'UPDATE attempts SET contact_id=?, outcome=?, talk_seconds=?, agent_note=?, dial_seconds=?, answer_seconds=? WHERE id=?',
+  ).run(contactId, outcome, talkSeconds, agentNote, dialSeconds, answerSeconds, id);
 }
 
 export function expireAttempt(db: Db, id: number, outcome: string): void {
@@ -152,22 +154,38 @@ export function patientByRun(db: Db, run: string): Patient | undefined {
   return db.prepare('SELECT * FROM patients WHERE run=?').get(run) as Patient | undefined;
 }
 
+type JoinedRow = Attempt & { patient: string | null; balance: number | null };
+
+function priced(row: JoinedRow): ResultRow {
+  if (!row.outcome) return { ...row, cost: 0, cost_estimated: false };
+  const d = durationsFor(row.dial_seconds, row.answer_seconds, row.outcome, row.talk_seconds);
+  return { ...row, cost: attemptCost(d), cost_estimated: d.estimated };
+}
+
 export function listResults(db: Db, limit = 500): ResultRow[] {
-  return db
-    .prepare(
-      'SELECT a.*, p.patient, p.balance FROM attempts a LEFT JOIN patients p ON p.run=a.run ' +
-        'ORDER BY a.attempted_at DESC, a.id DESC LIMIT ?',
-    )
-    .all(limit) as ResultRow[];
+  return (
+    db
+      .prepare(
+        'SELECT a.*, p.patient, p.balance FROM attempts a LEFT JOIN patients p ON p.run=a.run ' +
+          'ORDER BY a.attempted_at DESC, a.id DESC LIMIT ?',
+      )
+      .all(limit) as JoinedRow[]
+  ).map(priced);
 }
 
 export function allResults(db: Db): ResultRow[] {
-  return db
-    .prepare(
-      'SELECT a.*, p.patient, p.balance FROM attempts a LEFT JOIN patients p ON p.run=a.run ' +
-        'ORDER BY a.attempted_at, a.id',
-    )
-    .all() as ResultRow[];
+  return (
+    db
+      .prepare(
+        'SELECT a.*, p.patient, p.balance FROM attempts a LEFT JOIN patients p ON p.run=a.run ' +
+          'ORDER BY a.attempted_at, a.id',
+      )
+      .all() as JoinedRow[]
+  ).map(priced);
+}
+
+export function allAttempts(db: Db): Attempt[] {
+  return db.prepare('SELECT * FROM attempts ORDER BY attempted_at, id').all() as Attempt[];
 }
 
 export function clearAttempts(db: Db): number {

@@ -2,6 +2,7 @@ import { app } from 'electron';
 import type { OutboundRequest } from '@aws-sdk/client-connectcampaignsv2';
 import type { Contact } from '@aws-sdk/client-connect';
 import {
+  allAttempts,
   attemptsSince,
   attemptsSinceAll,
   clearAttempts,
@@ -22,7 +23,10 @@ import { evaluate, type DropReason } from '../shared/rules';
 import { normalizePhone } from '../shared/phone';
 import { outcomeKey, outcomeLabel, outcomeTone, EXPIRED_OUTCOME, HUMAN_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
 import { clockStamp, toUtcText, parseUtcText } from '../shared/time';
+import { attemptCost, durationsFor } from '../shared/pricing';
 import type {
+  Attempt,
+  CostSummary,
   DialerEvent,
   DialerStatus,
   LogLine,
@@ -471,7 +475,12 @@ export class Dialer {
     const open = latestOpenAttempt(this.db, run);
     if (!open) return;
     const note = attrs.AGENT_NOTE || attrs.AgentNote || attrs.DISPOSITION_NOTE || attrs.DispositionNote || attrs.DISPOSITION || null;
-    resolveAttempt(this.db, open.id, contactId, outcome, talk, note);
+    const ended = contact.DisconnectTimestamp;
+    const started = contact.InitiationTimestamp;
+    const answered = contact.ConnectedToSystemTimestamp;
+    const dialSeconds = ended && started ? Math.max(0, Math.round((ended.getTime() - started.getTime()) / 1000)) : null;
+    const answerSeconds = ended && answered ? Math.max(0, Math.round((ended.getTime() - answered.getTime()) / 1000)) : dialSeconds === null ? null : 0;
+    resolveAttempt(this.db, open.id, contactId, outcome, talk, note, dialSeconds, answerSeconds);
     this.lastOutcome = outcome;
     this.stats[outcomeKey(outcome)] += 1;
     const detail = talk ? `  ${talk}s on the line` : '';
@@ -546,6 +555,46 @@ export class Dialer {
       human: counts.human,
       sent: today.length,
       trend: { labels, attempts, human },
+      cost: this.costSummary(today),
+    };
+  }
+
+  private costSummary(today: Attempt[]): CostSummary {
+    let allTime = 0;
+    for (const a of allAttempts(this.db)) {
+      if (!a.outcome) continue;
+      allTime += attemptCost(durationsFor(a.dial_seconds, a.answer_seconds, a.outcome, a.talk_seconds));
+    }
+    let total = 0;
+    let attempts = 0;
+    let human = 0;
+    let humanCost = 0;
+    let campaignSeconds = 0;
+    let answeredSeconds = 0;
+    let estimated = 0;
+    for (const a of today) {
+      if (!a.outcome) continue;
+      const d = durationsFor(a.dial_seconds, a.answer_seconds, a.outcome, a.talk_seconds);
+      const cost = attemptCost(d);
+      attempts += 1;
+      total += cost;
+      campaignSeconds += d.dialSeconds;
+      answeredSeconds += d.answerSeconds;
+      if (d.estimated) estimated += 1;
+      if (a.outcome === HUMAN_OUTCOME) {
+        human += 1;
+        humanCost += cost;
+      }
+    }
+    return {
+      today: total,
+      allTime,
+      attempts,
+      perAttempt: attempts ? total / attempts : 0,
+      perHuman: human ? total / human : null,
+      campaignMinutes: campaignSeconds / 60,
+      answeredMinutes: answeredSeconds / 60,
+      estimatedAttempts: estimated,
     };
   }
 }

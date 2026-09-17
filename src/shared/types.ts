@@ -21,11 +21,26 @@ export interface Attempt {
   outcome: string | null;
   talk_seconds: number | null;
   agent_note: string | null;
+  dial_seconds: number | null;
+  answer_seconds: number | null;
 }
 
 export interface ResultRow extends Attempt {
   patient: string | null;
   balance: number | null;
+  cost: number;
+  cost_estimated: boolean;
+}
+
+export interface CostSummary {
+  today: number;
+  allTime: number;
+  attempts: number;
+  perAttempt: number;
+  perHuman: number | null;
+  campaignMinutes: number;
+  answeredMinutes: number;
+  estimatedAttempts: number;
 }
 
 export interface Stats {
@@ -71,6 +86,7 @@ export interface SessionStats {
   human: number;
   sent: number;
   trend: { labels: string[]; attempts: number[]; human: number[] };
+  cost: CostSummary;
 }
 
 export interface ImportResult {

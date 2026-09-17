@@ -65,11 +65,11 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
     const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
     if (result.canceled || !result.filePath) return null;
     const rows = allResults(dialer.db);
-    const header = ['attempted_at', 'run', 'patient', 'phone', 'balance', 'outcome', 'talk_seconds', 'agent_note', 'contact_id'];
+    const header = ['attempted_at', 'run', 'patient', 'phone', 'balance', 'outcome', 'talk_seconds', 'dial_seconds', 'answer_seconds', 'cost_usd', 'cost_estimated', 'agent_note', 'contact_id'];
     const lines = [header.join(',')];
     for (const r of rows) {
       lines.push(
-        [r.attempted_at, r.run, r.patient, r.phone, r.balance, r.outcome, r.talk_seconds, r.agent_note, r.contact_id]
+        [r.attempted_at, r.run, r.patient, r.phone, r.balance, r.outcome, r.talk_seconds, r.dial_seconds, r.answer_seconds, r.outcome ? r.cost.toFixed(4) : '', r.outcome ? (r.cost_estimated ? 'yes' : 'no') : '', r.agent_note, r.contact_id]
           .map(csvEscape)
           .join(','),
       );
