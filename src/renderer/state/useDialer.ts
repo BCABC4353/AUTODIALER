@@ -19,6 +19,8 @@ export interface DialerState {
   results: ResultRow[];
   session: SessionStats | null;
   update: ForceUpdateState | null;
+  analysisTick: number;
+  resultsTick: number;
   error: { title: string; message: string } | null;
   dismissError: () => void;
   start: () => Promise<void>;
@@ -42,6 +44,8 @@ export function useDialer(): DialerState {
   const [results, setResults] = useState<ResultRow[]>([]);
   const [session, setSession] = useState<SessionStats | null>(null);
   const [update, setUpdate] = useState<ForceUpdateState | null>(null);
+  const [analysisTick, setAnalysisTick] = useState(0);
+  const [resultsTick, setResultsTick] = useState(0);
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const resultsTimer = useRef<number | null>(null);
   const lastLive = useRef<{ id: string | null; onLine: boolean }>({ id: null, onLine: false });
@@ -64,6 +68,7 @@ export function useDialer(): DialerState {
     const [rows, stats] = await Promise.all([api.results.list(), api.results.session()]);
     setResults(rows);
     setSession(stats);
+    setResultsTick((t) => t + 1);
   }, [api]);
 
   useEffect(() => {
@@ -112,6 +117,9 @@ export function useDialer(): DialerState {
         case 'update':
           setUpdate(event.state);
           break;
+        case 'analysis':
+          setAnalysisTick((t) => t + 1);
+          break;
       }
     });
     const clock = window.setInterval(() => void refreshResults(), 60_000);
@@ -147,6 +155,8 @@ export function useDialer(): DialerState {
     results,
     session,
     update,
+    analysisTick,
+    resultsTick,
     error,
     dismissError: () => setError(null),
     start,

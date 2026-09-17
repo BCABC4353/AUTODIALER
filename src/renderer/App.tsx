@@ -5,6 +5,7 @@ import { DialView } from './components/DialView';
 import { Footer } from './components/Footer';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { Header, type View } from './components/Header';
+import { InsightsView } from './components/InsightsView';
 import { LoadView } from './components/LoadView';
 import { PhoneRail } from './components/PhoneRail';
 import { ResultsView } from './components/ResultsView';
@@ -37,8 +38,9 @@ export function App() {
             <DialView key="dial" status={d.status} now={d.now} log={d.log} session={d.session} onStart={() => void d.start()} onStop={() => void d.stop()} />
           )}
           {view === 'results' && (
-            <ResultsView key="results" results={d.results} onRefresh={() => void d.refreshResults()} onExport={() => void d.exportCsv()} onClear={() => void d.clearHistory()} />
+            <ResultsView key="results" results={d.results} analysisTick={d.analysisTick} onRefresh={() => void d.refreshResults()} onExport={() => void d.exportCsv()} onClear={() => void d.clearHistory()} />
           )}
+          {view === 'insights' && <InsightsView key="insights" resultsTick={d.resultsTick} />}
         </main>
         <PhoneRail />
       </div>

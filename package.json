@@ -25,6 +25,7 @@
   "dependencies": {
     "@aws-sdk/client-connect": "^3.900.0",
     "@aws-sdk/client-connectcampaignsv2": "^3.900.0",
+    "@aws-sdk/client-s3": "^3.1134.0",
     "@radix-ui/react-tooltip": "^1.2.8",
     "better-sqlite3": "^12.4.1",
     "class-variance-authority": "^0.7.1",

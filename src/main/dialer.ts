@@ -3,8 +3,11 @@ import type { OutboundRequest } from '@aws-sdk/client-connectcampaignsv2';
 import type { Contact } from '@aws-sdk/client-connect';
 import {
   allAttempts,
+  attemptById,
+  attemptsAwaitingAnalysis,
   attemptsSince,
   attemptsSinceAll,
+  attemptsWithAgent,
   clearAttempts,
   expireAttempt,
   insertAttempt,
@@ -16,19 +19,29 @@ import {
   patientByRun,
   pendingAttempts,
   resolveAttempt,
+  saveAnalysis,
+  saveDetail,
   type Db,
 } from './db';
 import { Aws, buildRequest } from './aws';
+import { buildDetail, fallbackSummary, fetchAnalysis, fetchRecording, findRecordingKey, keyFromLocation } from './insights';
 import { evaluate, type DropReason } from '../shared/rules';
 import { normalizePhone } from '../shared/phone';
 import { outcomeKey, outcomeLabel, outcomeTone, EXPIRED_OUTCOME, HUMAN_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
 import { clockStamp, toUtcText, parseUtcText } from '../shared/time';
 import { attemptCost, durationsFor } from '../shared/pricing';
 import type {
+  AgentReport,
+  AgentSummary,
   Attempt,
+  CallAnalysis,
+  ContactDetail,
   CostSummary,
   DialerEvent,
   DialerStatus,
+  InsightScope,
+  InsightsReport,
+  ResultDetail,
   LogLine,
   NowState,
   Patient,
@@ -45,6 +58,31 @@ const POLL_MS = 2_000;
 const STALE_MINUTES = 15;
 const LOG_CAP = 600;
 const NEXT_CACHE_MS = 10_000;
+const ANALYSIS_POLL_MS = 60_000;
+const ANALYSIS_MIN_AGE_MS = 2 * 60_000;
+const ANALYSIS_GIVE_UP_MS = 60 * 60_000;
+
+function parseJson<T>(text: string | null | undefined): T | null {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function tally(map: Map<string, number>, key: string, by = 1): void {
+  map.set(key, (map.get(key) ?? 0) + by);
+}
+
+function ranked(map: Map<string, number>): { label: string; value: number }[] {
+  return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
+}
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
 
 type Listener = (event: DialerEvent) => void;
 
@@ -98,6 +136,8 @@ export class Dialer {
   private nextCache: { at: number; patient: Patient | null } = { at: 0, patient: null };
   private tickTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
+  private analysisTimer: NodeJS.Timeout | null = null;
+  private analysing = false;
 
   constructor() {
     this.db = openDb();
@@ -115,7 +155,9 @@ export class Dialer {
   startLoops(): void {
     this.tickTimer = setInterval(() => void this.tick(), TICK_MS);
     this.pollTimer = setInterval(() => void this.poll(), POLL_MS);
+    this.analysisTimer = setInterval(() => void this.analysisSweep(), ANALYSIS_POLL_MS);
     void this.probe();
+    setTimeout(() => void this.analysisSweep(), 15_000);
   }
 
   private async probe(): Promise<void> {
@@ -133,6 +175,7 @@ export class Dialer {
   stopLoops(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
     if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.analysisTimer) clearInterval(this.analysisTimer);
   }
 
   logLine(text: string, level: LogLine['level'] = ''): void {
@@ -481,6 +524,7 @@ export class Dialer {
     const dialSeconds = ended && started ? Math.max(0, Math.round((ended.getTime() - started.getTime()) / 1000)) : null;
     const answerSeconds = ended && answered ? Math.max(0, Math.round((ended.getTime() - answered.getTime()) / 1000)) : dialSeconds === null ? null : 0;
     resolveAttempt(this.db, open.id, contactId, outcome, talk, note, dialSeconds, answerSeconds);
+    void this.captureDetail(open.id, contact);
     this.lastOutcome = outcome;
     this.stats[outcomeKey(outcome)] += 1;
     const detail = talk ? `  ${talk}s on the line` : '';
@@ -497,6 +541,194 @@ export class Dialer {
     this.emit({ type: 'results' });
     this.emitStatus();
     void this.tick();
+  }
+
+  private async captureDetail(id: number, contact: Contact): Promise<ContactDetail | null> {
+    try {
+      const detail = await buildDetail(contact);
+      saveDetail(this.db, id, JSON.stringify(detail), detail.agent?.id ?? null);
+      return detail;
+    } catch (err) {
+      this.logLine(`call detail: ${err instanceof Error ? err.message : String(err)}`, 'err');
+      return null;
+    }
+  }
+
+  private async analysisSweep(): Promise<void> {
+    if (this.analysing) return;
+    this.analysing = true;
+    try {
+      const since = toUtcText(new Date(Date.now() - 24 * 3600 * 1000));
+      for (const attempt of attemptsAwaitingAnalysis(this.db, since)) {
+        const at = parseUtcText(attempt.attempted_at);
+        const age = at ? Date.now() - at.getTime() : Infinity;
+        if (age < ANALYSIS_MIN_AGE_MS) continue;
+        await this.refreshAnalysis(attempt, age > ANALYSIS_GIVE_UP_MS);
+      }
+    } catch (err) {
+      this.logLine(`analysis: ${err instanceof Error ? err.message : String(err)}`, 'err');
+    } finally {
+      this.analysing = false;
+    }
+  }
+
+  private async refreshAnalysis(attempt: Attempt, giveUp: boolean): Promise<CallAnalysis | null> {
+    if (!attempt.contact_id) return null;
+    const analysis = await fetchAnalysis(attempt.contact_id);
+    if (analysis.status === 'pending' && !giveUp) return analysis;
+    if (analysis.status === 'pending') analysis.status = 'unavailable';
+    const summary = analysis.status === 'ready' ? fallbackSummary(analysis) : null;
+    saveAnalysis(this.db, attempt.id, JSON.stringify(analysis), summary, true);
+    if (analysis.status === 'ready') {
+      this.logLine(`transcript ready  ${this.describePatient(attempt.run)}${summary ? '  ' + summary : ''}`, 'ok');
+      this.nextCache.at = 0;
+    }
+    this.emit({ type: 'analysis', id: attempt.id });
+    this.emit({ type: 'results' });
+    return analysis;
+  }
+
+  async resultDetail(id: number): Promise<ResultDetail> {
+    const attempt = attemptById(this.db, id);
+    if (!attempt) return { id, detail: null, analysis: null, note: null, recordingAvailable: false };
+    let detail = parseJson<ContactDetail>(attempt.detail_json);
+    if (!detail && attempt.contact_id && this.aws) {
+      try {
+        detail = await this.captureDetail(id, await this.aws.describe(attempt.contact_id));
+      } catch {
+        detail = null;
+      }
+    }
+    let analysis = parseJson<CallAnalysis>(attempt.analysis_json);
+    const agentId = detail?.agent?.id ?? attempt.agent_id;
+    if (agentId && (!analysis || analysis.status === 'pending')) {
+      const at = parseUtcText(attempt.attempted_at);
+      const age = at ? Date.now() - at.getTime() : Infinity;
+      if (age >= ANALYSIS_MIN_AGE_MS) analysis = (await this.refreshAnalysis({ ...attempt, agent_id: agentId }, age > ANALYSIS_GIVE_UP_MS)) ?? analysis;
+    }
+    const fresh = attemptById(this.db, id) ?? attempt;
+    return {
+      id,
+      detail,
+      analysis,
+      note: fresh.agent_note ?? null,
+      recordingAvailable: Boolean(detail?.recordingLocation) || Boolean(agentId),
+    };
+  }
+
+  async recordingBytes(id: number): Promise<Uint8Array | null> {
+    const attempt = attemptById(this.db, id);
+    if (!attempt?.contact_id) return null;
+    const detail = parseJson<ContactDetail>(attempt.detail_json);
+    let key = detail?.recordingLocation ? keyFromLocation(detail.recordingLocation) : null;
+    if (!key) {
+      key = await findRecordingKey(attempt.contact_id, parseUtcText(attempt.attempted_at));
+      if (!key) return null;
+      if (detail) {
+        detail.recordingLocation = key;
+        saveDetail(this.db, id, JSON.stringify(detail), detail.agent?.id ?? attempt.agent_id);
+      }
+    }
+    return fetchRecording(key);
+  }
+
+  private agentSummaries(attempts: Attempt[]): AgentSummary[] {
+    const groups = new Map<string, AgentSummary & { qualities: number[] }>();
+    for (const a of attempts) {
+      const detail = parseJson<ContactDetail>(a.detail_json);
+      const agent = detail?.agent;
+      const agentId = agent?.id ?? a.agent_id;
+      if (!agentId) continue;
+      let g = groups.get(agentId);
+      if (!g) {
+        g = { agentId, username: agent?.username ?? agentId.slice(0, 8), calls: 0, humans: 0, talkSeconds: 0, holdSeconds: 0, acwSeconds: 0, quality: null, qualities: [] };
+        groups.set(agentId, g);
+      }
+      g.calls += 1;
+      if (a.outcome === HUMAN_OUTCOME) g.humans += 1;
+      g.talkSeconds += agent?.talkSeconds ?? a.talk_seconds ?? 0;
+      g.holdSeconds += agent?.holdSeconds ?? 0;
+      g.acwSeconds += agent?.acwSeconds ?? 0;
+      if (detail?.quality.agent !== null && detail?.quality.agent !== undefined) g.qualities.push(detail.quality.agent);
+    }
+    return [...groups.values()]
+      .map(({ qualities, ...g }) => ({ ...g, quality: average(qualities) }))
+      .sort((a, b) => b.calls - a.calls);
+  }
+
+  agentReport(): AgentReport {
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    return {
+      today: this.agentSummaries(attemptsWithAgent(this.db, toUtcText(dayStart))),
+      allTime: this.agentSummaries(attemptsWithAgent(this.db, null)),
+    };
+  }
+
+  insights(scope: InsightScope): InsightsReport {
+    let since: string | null = null;
+    if (scope === 'today') {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      since = toUtcText(d);
+    } else if (scope === 'week') {
+      since = toUtcText(new Date(Date.now() - 7 * 86400 * 1000));
+    }
+    const attempts = since ? attemptsSinceAll(this.db, since) : allAttempts(this.db);
+    const rings: number[] = [];
+    const greetings: number[] = [];
+    const talks: number[] = [];
+    const qualities: number[] = [];
+    const amd = new Map<string, number>();
+    const disconnects = new Map<string, number>();
+    const sentiment = new Map<string, number>();
+    const categories = new Map<string, number>();
+    const issues = new Map<string, number>();
+    let detailed = 0;
+    let analysed = 0;
+    let calls = 0;
+    for (const a of attempts) {
+      if (!a.outcome) continue;
+      calls += 1;
+      tally(amd, outcomeLabel(a.outcome));
+      const detail = parseJson<ContactDetail>(a.detail_json);
+      if (detail) {
+        detailed += 1;
+        if (detail.ringSeconds !== null) rings.push(detail.ringSeconds);
+        if (detail.greetingSeconds !== null) greetings.push(detail.greetingSeconds);
+        if (detail.agent?.talkSeconds !== null && detail.agent?.talkSeconds !== undefined) talks.push(detail.agent.talkSeconds);
+        if (detail.quality.agent !== null) qualities.push(detail.quality.agent);
+        if (detail.quality.customer !== null) qualities.push(detail.quality.customer);
+        if (detail.disconnectReason) tally(disconnects, detail.disconnectReason.replace(/_/g, ' ').toLowerCase());
+        for (const issue of detail.quality.issues) tally(issues, issue.replace(/_/g, ' ').toLowerCase());
+      } else if (a.talk_seconds !== null) {
+        talks.push(a.talk_seconds);
+      }
+      const analysis = parseJson<CallAnalysis>(a.analysis_json);
+      if (analysis?.status === 'ready') {
+        analysed += 1;
+        for (const turn of analysis.transcript) {
+          if (turn.role === 'CUSTOMER' && turn.sentiment) tally(sentiment, turn.sentiment.toLowerCase());
+        }
+        for (const c of analysis.categories) tally(categories, c);
+      }
+    }
+    return {
+      scope,
+      calls,
+      detailed,
+      analysed,
+      avgRingSeconds: average(rings),
+      avgGreetingSeconds: average(greetings),
+      avgTalkSeconds: average(talks),
+      avgQuality: average(qualities),
+      amd: ranked(amd),
+      disconnects: ranked(disconnects),
+      sentiment: ranked(sentiment),
+      categories: ranked(categories),
+      qualityIssues: ranked(issues),
+      agents: this.agentSummaries(attempts.filter((a) => a.agent_id)),
+    };
   }
 
   clearHistory(): number {

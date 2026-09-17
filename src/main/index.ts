@@ -22,8 +22,8 @@ function ownPage(url: string): boolean {
 
 function installCsp(): void {
   const policy = isDev
-    ? "default-src 'self' http://localhost:5173 ws://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173; font-src 'self' data: http://localhost:5173; img-src 'self' data: http://localhost:5173; connect-src 'self' http://localhost:5173 ws://localhost:5173; frame-src https:"
-    : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; frame-src https:";
+    ? "default-src 'self' http://localhost:5173 ws://localhost:5173; script-src 'self' http://localhost:5173 'unsafe-inline'; style-src 'self' 'unsafe-inline' http://localhost:5173; font-src 'self' data: http://localhost:5173; img-src 'self' data: http://localhost:5173; connect-src 'self' http://localhost:5173 ws://localhost:5173; media-src 'self' blob:; frame-src https:"
+    : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; frame-src https:";
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (!ownPage(details.url) || details.resourceType !== 'mainFrame') {
       callback({ responseHeaders: details.responseHeaders });

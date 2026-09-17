@@ -55,6 +55,10 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
 
   ipcMain.handle('results:list', () => listResults(dialer.db));
   ipcMain.handle('results:session', () => dialer.sessionStats());
+  ipcMain.handle('results:detail', (_e, id: number) => dialer.resultDetail(id));
+  ipcMain.handle('results:recording', (_e, id: number) => dialer.recordingBytes(id));
+  ipcMain.handle('results:agents', () => dialer.agentReport());
+  ipcMain.handle('results:insights', (_e, scope: 'today' | 'week' | 'all') => dialer.insights(scope));
 
   ipcMain.handle('results:export', async () => {
     const win = getWindow();
