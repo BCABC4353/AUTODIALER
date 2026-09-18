@@ -94,14 +94,27 @@ export interface CallCharacteristics {
   actionItems: string[];
 }
 
+export interface ExtractedFact {
+  name: string;
+  label: string;
+  value: string;
+}
+
 export interface CallAnalysis {
   status: 'pending' | 'ready' | 'unavailable';
   transcript: TranscriptTurn[];
   categories: string[];
   summary: string | null;
   characteristics: CallCharacteristics | null;
+  extracted: ExtractedFact[];
   actions: string[];
   fetchedAt: string;
+}
+
+export interface LiveLens {
+  sentiment: string | null;
+  lastLine: string;
+  categories: string[];
 }
 
 export interface ResultDetail {
@@ -199,6 +212,8 @@ export interface NowState {
   tripDate: string;
   schedule: string;
   event: string;
+  sentiment: string | null;
+  lastLine: string;
   status: string;
   tone: Tone;
   kind: 'live' | 'dialing' | 'next' | 'idle';

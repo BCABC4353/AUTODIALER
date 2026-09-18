@@ -26,7 +26,7 @@ import {
   type Db,
 } from './db';
 import { Aws, buildRequest } from './aws';
-import { buildDetail, fallbackSummary, fetchAnalysis, fetchCharacteristics, fetchRecording, findRecordingKey, keyFromLocation } from './insights';
+import { buildDetail, fallbackSummary, fetchAnalysis, fetchCharacteristics, fetchLive, fetchRecording, findRecordingKey, keyFromLocation } from './insights';
 import { categoryEffect, categoryLabel, categoryRule } from '../shared/categories';
 import { evaluate, type DropReason } from '../shared/rules';
 import { normalizePhone } from '../shared/phone';
@@ -46,6 +46,7 @@ import type {
   FlaggedCall,
   InsightScope,
   InsightsReport,
+  LiveLens,
   ResultDetail,
   LogLine,
   NowState,
@@ -60,6 +61,7 @@ export const EXPIRY_MINUTES = 5;
 export const PIPELINE_DEPTH = 2;
 const TICK_MS = 10_000;
 const POLL_MS = 2_000;
+const LIVE_LENS_MS = 4_000;
 const STALE_MINUTES = 15;
 const LOG_CAP = 600;
 const NEXT_CACHE_MS = 10_000;
@@ -132,11 +134,11 @@ function money(value: number | null | undefined): string {
 }
 
 function idleNow(): NowState {
-  return { contactId: null, name: '—', run: '', balance: '', tripDate: '', schedule: '', event: '', status: 'idle', tone: 'slate', kind: 'idle' };
+  return { contactId: null, name: '—', run: '', balance: '', tripDate: '', schedule: '', event: '', sentiment: null, lastLine: '', status: 'idle', tone: 'slate', kind: 'idle' };
 }
 
-function patientFacts(patient: Patient | undefined | null): Pick<NowState, 'tripDate' | 'schedule' | 'event'> {
-  return { tripDate: patient?.trip_date ?? '', schedule: patient?.schedule ?? '', event: patient?.event ?? '' };
+function patientFacts(patient: Patient | undefined | null): Pick<NowState, 'tripDate' | 'schedule' | 'event' | 'sentiment' | 'lastLine'> {
+  return { tripDate: patient?.trip_date ?? '', schedule: patient?.schedule ?? '', event: patient?.event ?? '', sentiment: null, lastLine: '' };
 }
 
 export class Dialer {
@@ -158,6 +160,9 @@ export class Dialer {
   private holdingLogged = false;
   private lastNoEligible = '';
   private lastNowKey = '';
+  private liveLens: LiveLens = { sentiment: null, lastLine: '', categories: [] };
+  private liveLensId: string | null = null;
+  private liveLensAt = 0;
   private nextCache: { at: number; patient: Patient | null } = { at: 0, patient: null };
   private tickTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
@@ -436,7 +441,31 @@ export class Dialer {
     }
     this.liveRuns = liveRuns;
     this.expireStale();
+    await this.refreshLive(live);
     this.updateNow(live);
+  }
+
+  private async refreshLive(live: { id: string; contact: Contact; attrs: Record<string, string> } | null): Promise<void> {
+    const withAgent = Boolean(live?.contact.AgentInfo?.ConnectedToAgentTimestamp);
+    if (!live || !withAgent) {
+      this.liveLens = { sentiment: null, lastLine: '', categories: [] };
+      this.liveLensId = null;
+      return;
+    }
+    if (this.liveLensId !== live.id) {
+      this.liveLens = { sentiment: null, lastLine: '', categories: [] };
+      this.liveLensId = live.id;
+      this.liveLensAt = 0;
+    }
+    if (Date.now() - this.liveLensAt < LIVE_LENS_MS) return;
+    this.liveLensAt = Date.now();
+    const next = await fetchLive(live.id);
+    if (!next) return;
+    for (const c of next.categories) {
+      if (this.liveLens.categories.includes(c)) continue;
+      this.logLine(`live alert  ${this.describePatient(live.attrs.RUN ?? '', live.attrs.PATIENT)}  ${categoryLabel(c)}`, 'err');
+    }
+    this.liveLens = next;
   }
 
   private expireStale(): void {
@@ -470,6 +499,8 @@ export class Dialer {
         run: live.attrs.RUN ? `RUN ${live.attrs.RUN}` : '',
         balance: live.attrs.BALANCE ? '$' + live.attrs.BALANCE : money(patient?.balance),
         ...patientFacts(patient),
+        sentiment: withAgent ? this.liveLens.sentiment : null,
+        lastLine: withAgent ? this.liveLens.lastLine : '',
         status,
         tone: withAgent ? 'emerald' : 'orange',
         kind: 'live',
@@ -516,7 +547,9 @@ export class Dialer {
       next.kind !== this.now.kind ||
       next.tripDate !== this.now.tripDate ||
       next.schedule !== this.now.schedule ||
-      next.event !== this.now.event;
+      next.event !== this.now.event ||
+      next.sentiment !== this.now.sentiment ||
+      next.lastLine !== this.now.lastLine;
     this.now = next;
     if (changed) {
       this.emit({ type: 'now', now: next });
@@ -606,7 +639,8 @@ export class Dialer {
   private async refreshAnalysis(attempt: Attempt, giveUp: boolean): Promise<CallAnalysis | null> {
     if (!attempt.contact_id) return null;
     const previous = parseJson<CallAnalysis>(attempt.analysis_json);
-    const analysis = previous?.status === 'ready' ? previous : await fetchAnalysis(attempt.contact_id);
+    const analysis = previous?.status === 'ready' ? previous : await fetchAnalysis(attempt.contact_id, parseUtcText(attempt.attempted_at));
+    analysis.extracted = analysis.extracted ?? [];
     if (analysis.status === 'pending' && !giveUp) return analysis;
     if (analysis.status === 'pending') analysis.status = 'unavailable';
     if (analysis.status === 'ready' && !analysis.characteristics) {
@@ -616,6 +650,8 @@ export class Dialer {
           analysis.characteristics = file.characteristics;
           if (!analysis.summary && file.summary) analysis.summary = file.summary;
           for (const c of file.categories) if (!analysis.categories.includes(c)) analysis.categories.push(c);
+          if (file.transcript.length > analysis.transcript.length) analysis.transcript = file.transcript;
+          if (file.extracted.length) analysis.extracted = file.extracted;
         } else if (giveUp) {
           analysis.characteristics = emptyCharacteristics();
         }

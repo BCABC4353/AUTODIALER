@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-connect": "^3.900.0",
+    "@aws-sdk/client-connect-contact-lens": "^3.1136.0",
     "@aws-sdk/client-connectcampaignsv2": "^3.900.0",
     "@aws-sdk/client-s3": "^3.1134.0",
     "@radix-ui/react-tooltip": "^1.2.8",
