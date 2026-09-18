@@ -1,13 +1,11 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Button, GlassPanel, PanelTitle, Pill, SegmentedControl } from '@ds/index.js';
-import type { AgentSummary, FlaggedCall, InsightScope, InsightsReport } from '@shared/types';
+import { Button, GlassPanel, PanelTitle, SegmentedControl, Tooltip } from '@ds/index.js';
+import type { AgentSummary, InsightScope, InsightsReport } from '@shared/types';
 import { formatCost, RATES } from '@shared/pricing';
-import { formatLocal } from '@shared/time';
 import { ActionBar } from './ActionBar';
 import { BlankDash, DataTable, type Column } from './DataTable';
 import { AttemptsTrend } from './viz/AttemptsTrend';
-import { CalloutTile } from './viz/CalloutTile';
 import { OutcomeBars } from './viz/OutcomeBars';
 import { Tile } from './viz/Tile';
 
@@ -24,17 +22,24 @@ const SENTIMENT_COLOR: Record<string, string> = {
   negative: 'var(--chart-series-1)',
 };
 
+const NONE = '—';
+
 function mmss(seconds: number): string {
   const s = Math.round(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function num(value: number | null | undefined, digits = 0, suffix = ''): string {
-  return value === null || value === undefined ? '—' : `${value.toFixed(digits)}${suffix}`;
+function pct(part: number, whole: number): string {
+  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : NONE;
 }
 
-function pct(part: number, whole: number): string {
-  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : '—';
+function signed(value: number | null): string {
+  if (value === null) return NONE;
+  return `${value > 0 ? '+' : ''}${value.toFixed(1)}`;
+}
+
+function share(value: number | null): string {
+  return value === null ? NONE : `${Math.round(value * 100)}%`;
 }
 
 const AGENT_COLUMNS: Column<AgentSummary>[] = [
@@ -48,34 +53,35 @@ const AGENT_COLUMNS: Column<AgentSummary>[] = [
   { id: 'quality', label: 'Audio', width: '6rem', align: 'right', mono: true, cell: (a) => (a.quality === null ? <BlankDash /> : a.quality.toFixed(2)) },
 ];
 
-const FLAG_COLUMNS: Column<FlaggedCall>[] = [
-  { id: 'when', label: 'When', width: '9rem', mono: true, cell: (f) => formatLocal(f.attemptedAt) },
-  { id: 'run', label: 'Run', width: '8rem', mono: true, cell: (f) => f.run },
-  { id: 'patient', label: 'Patient', width: '16rem', cell: (f) => f.patient || <BlankDash /> },
-  {
-    id: 'flags',
-    label: 'Flags',
-    cell: (f) => (
-      <span className="flex flex-wrap gap-1">
-        {f.flags.map((x) => (
-          <Pill key={x} tone="violet" size="sm" border>
-            {x}
-          </Pill>
-        ))}
-      </span>
-    ),
-  },
-];
+interface StatItem {
+  label: string;
+  value: string;
+  sub: string;
+  hint: string;
+}
 
-function RankList({ title, sentence, entries, empty, color = 'var(--chart-series-3)' }: { title: string; sentence: string; entries: { label: string; value: number }[]; empty: string; color?: string }) {
+function Stat({ label, value, sub, hint }: StatItem) {
+  const empty = value === NONE;
+  return (
+    <Tooltip content={hint} side="bottom" size="sm">
+      <div className="flex min-w-0 flex-col justify-center gap-0.5 px-fluid-sm py-2">
+        <span className={`truncate font-black leading-none tracking-tight tabular-nums ${empty ? 'text-fluid-heading text-content-subtle' : 'text-fluid-title text-content'}`}>{empty ? '–' : value}</span>
+        <span className="ds-smallcaps truncate text-fluid-nano font-bold uppercase tracking-wider text-content-secondary">{label}</span>
+        <span className="ds-chart-label truncate text-content-muted">{sub || ' '}</span>
+      </div>
+    </Tooltip>
+  );
+}
+
+function RankList({ title, right, entries, empty, color = 'var(--chart-series-3)' }: { title: string; right?: ReactNode; entries: { label: string; value: number }[]; empty: string; color?: string }) {
   const max = Math.max(1, ...entries.map((e) => e.value));
   return (
-    <Tile title={title} sentence={sentence}>
+    <Tile title={title} right={right}>
       {entries.length === 0 ? (
         <div className="ds-smallcaps flex flex-1 items-center justify-center rounded-md border border-dashed border-glass-edge px-3 py-2 text-center text-fluid-label text-content-muted normal-case">{empty}</div>
       ) : (
-        <ul className="custom-scrollbar flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
-          {entries.slice(0, 10).map((e) => (
+        <ul className="custom-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+          {entries.slice(0, 8).map((e) => (
             <li key={e.label} className="flex flex-col gap-0.5">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="ds-smallcaps truncate text-fluid-label text-content normal-case">{e.label}</span>
@@ -92,15 +98,18 @@ function RankList({ title, sentence, entries, empty, color = 'var(--chart-series
   );
 }
 
-function Section({ title, right, height, children }: { title: string; right?: string; height: string; children: React.ReactNode }) {
+function Facts({ title, right, rows }: { title: string; right?: ReactNode; rows: { label: string; value: string }[] }) {
   return (
-    <GlassPanel padding="sm" gap="xs" className={`${height} shrink-0`}>
-      <header className="flex items-center justify-between">
-        <PanelTitle>{title}</PanelTitle>
-        {right && <span className="font-mono text-fluid-micro text-content-muted tabular-nums">{right}</span>}
-      </header>
-      <div className="flex min-h-0 flex-1 gap-fluid-sm">{children}</div>
-    </GlassPanel>
+    <Tile title={title} right={right}>
+      <ul className="flex min-h-0 flex-1 flex-col justify-evenly overflow-hidden">
+        {rows.map((row) => (
+          <li key={row.label} className="flex items-baseline justify-between gap-3 border-b border-line py-0.5 last:border-b-0">
+            <span className="ds-smallcaps truncate text-fluid-label text-content-muted normal-case">{row.label}</span>
+            <span className={`shrink-0 font-mono text-fluid-label tabular-nums ${row.value === NONE ? 'text-content-subtle' : 'text-content'}`}>{row.value === NONE ? '–' : row.value}</span>
+          </li>
+        ))}
+      </ul>
+    </Tile>
   );
 }
 
@@ -128,8 +137,38 @@ export function InsightsView({ resultsTick }: { resultsTick: number }) {
   const scopeWord = scope === 'today' ? 'today' : scope === 'week' ? 'this week' : 'all time';
   const cost = r?.cost ?? null;
 
+  const stats: StatItem[] = r && cost
+    ? [
+        { label: 'calls', value: String(r.calls), sub: `${r.detailed} with detail · ${r.analysed} analysed`, hint: 'Completed attempts in the scope. Detail comes from the Connect contact record; analysed means Contact Lens produced a transcript.' },
+        { label: 'contact rate', value: r.calls ? pct(r.humans, r.calls) : NONE, sub: `${r.humans} humans reached`, hint: 'Humans reached out of completed calls.' },
+        { label: 'payments', value: String(r.payments), sub: r.humans ? `${pct(r.payments, r.humans)} of humans reached` : 'no humans reached yet', hint: 'Calls where a payment went through on the line, from the transcript categories.' },
+        { label: 'handled', value: String(r.handled), sub: `${r.dncAdded} do not call · ${r.callbacks} callbacks`, hint: 'Paid, promised to pay, asked about a plan, or disputed the balance. Do not call counts patients who asked to stop or were a wrong number.' },
+        { label: 'flagged', value: String(r.flagged.length), sub: 'Results tab, Flagged filter', hint: 'Calls that asked for a supervisor or billing, or tripped a Contact Lens rule. Each one also emails you.' },
+        {
+          label: `spend ${scopeWord}`,
+          value: formatCost(cost.today),
+          sub: `${cost.campaignMinutes.toFixed(1)} min dialing · ${cost.answeredMinutes.toFixed(1)} min answered`,
+          hint: `Amazon Connect prorated per second: ${formatCost(RATES.campaignPerMinute)}/min while dialing, ${formatCost(RATES.voicePerMinute + RATES.telephonyPerMinute)}/min once answered, Contact Lens ${RATES.lensPerMinute ? formatCost(RATES.lensPerMinute) + '/min' : 'included'}. ${cost.estimatedAttempts ? `${cost.estimatedAttempts} calls estimated from their outcome.` : 'Every call priced from recorded durations.'}`,
+        },
+        { label: 'per call', value: cost.attempts ? formatCost(cost.perAttempt) : NONE, sub: `${cost.attempts} priced attempts`, hint: 'Average cost of one attempt.' },
+        { label: 'per human', value: cost.perHuman === null ? NONE : formatCost(cost.perHuman), sub: `${formatCost(cost.allTime)} all time`, hint: 'Spend divided by humans reached.' },
+        { label: 'per payment', value: cost.perPayment === null ? NONE : formatCost(cost.perPayment), sub: `${cost.payments} payments taken`, hint: 'Spend divided by payments taken.' },
+        { label: 'sentiment', value: signed(r.avgCustomerSentiment), sub: r.avgRingSeconds === null ? '' : `${Math.round(r.avgRingSeconds)}s average ring`, hint: 'Average patient sentiment from Contact Lens, from -5 to +5.' },
+      ]
+    : [];
+
+  const conversation = [
+    { label: 'agent share of talk', value: share(r?.talkShareAgent ?? null) },
+    { label: 'interruptions per call', value: r?.avgInterruptions === null || r?.avgInterruptions === undefined ? NONE : r.avgInterruptions.toFixed(1) },
+    { label: 'silence', value: share(r?.avgNonTalkShare ?? null) },
+    { label: 'agent pace', value: r?.avgAgentWpm === null || r?.avgAgentWpm === undefined ? NONE : `${Math.round(r.avgAgentWpm)} wpm` },
+    { label: 'greeting before detection', value: r?.avgGreetingSeconds === null || r?.avgGreetingSeconds === undefined ? NONE : `${r.avgGreetingSeconds.toFixed(1)}s` },
+    { label: 'average agent talk', value: r?.avgTalkSeconds === null || r?.avgTalkSeconds === undefined ? NONE : mmss(r.avgTalkSeconds) },
+    { label: r?.qualityIssues[0] ? `audio, ${r.qualityIssues[0].label}` : 'audio score', value: r?.avgQuality === null || r?.avgQuality === undefined ? NONE : `${r.avgQuality.toFixed(2)} / 5` },
+  ];
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="@container/insights flex min-h-0 flex-1 flex-col">
       <ActionBar
         left={
           <>
@@ -142,102 +181,55 @@ export function InsightsView({ resultsTick }: { resultsTick: number }) {
         }
         right={<span className="text-fluid-nano font-black uppercase tracking-wider text-content-muted">{coverage}</span>}
       />
-      <div className="ds-ambient view-enter custom-scrollbar flex min-h-0 flex-1 flex-col gap-fluid-sm overflow-y-auto p-fluid-md">
-        <Section title="Outcomes" right={r ? `${r.calls} calls ${scopeWord}` : ''} height="h-[16rem]">
-          <CalloutTile
-            title="Contact rate"
-            sentence="Humans reached out of completed calls."
-            value={r && r.calls ? pct(r.humans, r.calls) : '—'}
-            label="human answered"
-            lines={[`${r?.humans ?? 0} of ${r?.calls ?? 0} completed calls`, `${r?.callbacks ?? 0} asked for a callback`]}
-          />
-          <CalloutTile
-            title="Payments"
-            sentence="Calls where a payment went through on the line."
-            value={r ? String(r.payments) : '—'}
-            label="payments taken"
-            lines={[
-              r && r.humans ? `${pct(r.payments, r.humans)} of humans reached` : 'no humans reached yet',
-              `${r?.handled ?? 0} handled: paid, promised, plan or dispute`,
-              `${r?.dncAdded ?? 0} added to do not call by what they said`,
-            ]}
-          />
+      <div className="ds-ambient view-enter custom-scrollbar flex min-h-0 flex-1 flex-col gap-fluid-xs overflow-y-auto p-fluid-sm">
+        <GlassPanel padding="none" gap="none" className="shrink-0 overflow-hidden">
+          <div className="grid grid-cols-5 divide-x divide-line @[1180px]/insights:grid-cols-10">
+            {stats.length === 0
+              ? Array.from({ length: 10 }, (_, i) => <Stat key={i} label="" value={NONE} sub="" hint="" />)
+              : stats.map((s) => <Stat key={s.label} {...s} />)}
+          </div>
+        </GlassPanel>
+
+        <div className="flex h-[12.5rem] shrink-0 gap-fluid-xs">
+          <div className="flex min-w-0 flex-[2]">
+            <AttemptsTrend
+              title="Volume"
+              right={scope === 'today' ? 'per hour, last 12h' : scope === 'week' ? 'per day, last 7' : 'per day, last 30'}
+              replayKey={key}
+              labels={r?.trend.labels ?? []}
+              series={[
+                { name: 'attempts', values: r?.trend.attempts ?? [], color: 'var(--chart-series-3)' },
+                { name: 'human', values: r?.trend.human ?? [], color: 'var(--chart-series-2)' },
+                { name: 'payments', values: r?.trend.payments ?? [], color: 'var(--chart-series-1)' },
+              ]}
+            />
+          </div>
           <OutcomeBars
-            title="Machine detection"
-            sentence="What answered, across the scope."
+            title="What answered"
+            right={r ? `${r.calls} calls` : ''}
             replayKey={key}
             entries={(r?.amd ?? []).slice(0, 6).map((e) => ({ label: e.label, value: e.value, color: e.label.includes('human') ? 'var(--chart-series-2)' : e.label.includes('voicemail') ? 'var(--chart-seq-4)' : 'var(--chart-series-1)' }))}
           />
-          <AttemptsTrend
-            title="Volume"
-            sentence={scope === 'today' ? 'Per hour across the last twelve hours.' : scope === 'week' ? 'Per day across the last seven days.' : 'Per day across the last thirty days.'}
-            replayKey={key}
-            labels={r?.trend.labels ?? []}
-            series={[
-              { name: 'attempts', values: r?.trend.attempts ?? [], color: 'var(--chart-series-3)' },
-              { name: 'human', values: r?.trend.human ?? [], color: 'var(--chart-series-2)' },
-              { name: 'payments', values: r?.trend.payments ?? [], color: 'var(--chart-series-1)' },
-            ]}
-          />
-        </Section>
-
-        <Section title="Cost" right={cost ? `${formatCost(cost.today)} ${scopeWord} · ${formatCost(cost.allTime)} all time` : ''} height="h-[13rem]">
-          <CalloutTile
-            title="Spend"
-            sentence="Amazon Connect, prorated per second at the billed AI-tier rates."
-            value={cost ? formatCost(cost.today) : '—'}
-            label={scopeWord}
-            lines={[
-              `${cost?.campaignMinutes.toFixed(1) ?? '0.0'} min dialing · ${cost?.answeredMinutes.toFixed(1) ?? '0.0'} min answered`,
-              `${formatCost(RATES.campaignPerMinute)}/min dialing + ${formatCost(RATES.voicePerMinute + RATES.telephonyPerMinute)}/min answered, Contact Lens ${RATES.lensPerMinute ? formatCost(RATES.lensPerMinute) + '/min' : 'included'}`,
-              cost?.estimatedAttempts ? `${cost.estimatedAttempts} calls estimated from outcome` : 'every call priced from recorded durations',
-            ]}
-          />
-          <CalloutTile title="Per call" sentence="Average cost of one attempt." value={cost ? formatCost(cost.perAttempt) : '—'} label="per attempt" lines={[`${cost?.attempts ?? 0} priced attempts`]} />
-          <CalloutTile title="Per human" sentence="Spend divided by humans reached." value={cost?.perHuman === null || cost?.perHuman === undefined ? '—' : formatCost(cost.perHuman)} label="per human reached" lines={[`${r?.humans ?? 0} humans reached`]} />
-          <CalloutTile title="Per payment" sentence="Spend divided by payments taken." value={cost?.perPayment === null || cost?.perPayment === undefined ? '—' : formatCost(cost.perPayment)} label="per payment" lines={[`${cost?.payments ?? 0} payments taken`]} />
-        </Section>
-
-        <Section title="Conversation" right={r ? `${r.analysed} analysed` : ''} height="h-[16rem]">
-          <CalloutTile
+          <OutcomeBars
             title="Patient sentiment"
-            sentence="Contact Lens score from -5 to +5."
-            value={r?.avgCustomerSentiment === null || r?.avgCustomerSentiment === undefined ? '—' : `${r.avgCustomerSentiment > 0 ? '+' : ''}${r.avgCustomerSentiment.toFixed(1)}`}
-            label="average"
-            lines={[
-              r?.talkShareAgent === null || r?.talkShareAgent === undefined ? 'no talk-share data yet' : `agent talks ${Math.round(r.talkShareAgent * 100)}% of the time`,
-              r?.avgInterruptions === null || r?.avgInterruptions === undefined ? '' : `${r.avgInterruptions.toFixed(1)} interruptions per call`,
-              r?.avgNonTalkShare === null || r?.avgNonTalkShare === undefined ? '' : `${Math.round(r.avgNonTalkShare * 100)}% silence`,
-              r?.avgAgentWpm === null || r?.avgAgentWpm === undefined ? '' : `agent pace ${Math.round(r.avgAgentWpm)} words per minute`,
-            ].filter(Boolean)}
+            right={r ? `${signed(r.avgCustomerSentiment)} avg` : ''}
+            replayKey={key}
+            entries={(r?.sentiment ?? []).map((e) => ({ label: e.label, value: e.value, color: SENTIMENT_COLOR[e.label] ?? 'var(--chart-other)' }))}
           />
-          <OutcomeBars title="Sentiment" sentence="Patient turns by Contact Lens sentiment." replayKey={key} entries={(r?.sentiment ?? []).map((e) => ({ label: e.label, value: e.value, color: SENTIMENT_COLOR[e.label] ?? 'var(--chart-other)' }))} />
-          <RankList title="What was said" sentence="Category rules matched on transcripts." entries={r?.categories ?? []} empty="No matches yet. Categories appear once an agent call has been analysed." color="var(--chart-series-5)" />
-          <CalloutTile
-            title="Ring and quality"
-            sentence="Seconds to pickup and Connect's audio score."
-            value={num(r?.avgRingSeconds, 0, 's')}
-            label="average ring"
-            lines={[
-              r?.avgGreetingSeconds === null || r?.avgGreetingSeconds === undefined ? 'no greeting timings yet' : `${r.avgGreetingSeconds.toFixed(1)}s greeting before AMD decided`,
-              r?.avgTalkSeconds === null || r?.avgTalkSeconds === undefined ? 'no agent talk time yet' : `${mmss(r.avgTalkSeconds)} average agent talk`,
-              r?.avgQuality === null || r?.avgQuality === undefined ? 'no audio scores yet' : `audio ${r.avgQuality.toFixed(2)} of 5${r.qualityIssues.length ? `, ${r.qualityIssues[0]?.label}` : ''}`,
-            ]}
-          />
-        </Section>
+        </div>
 
-        <Section title="Needs a look" right={r ? `${r.flagged.length} flagged` : ''} height="h-[16rem]">
-          <DataTable columns={FLAG_COLUMNS} rows={r?.flagged ?? []} rowKey={(f) => String(f.id)} rowClass={() => 'text-content-secondary'} empty={{ title: 'Nothing flagged', description: 'Upset patients, supervisor requests, long silences, sentiment drops and unverified identity land here. Each one also emails you.' }} />
-          <div className="flex w-[22rem] shrink-0 flex-col">
-            <RankList title="How calls ended" sentence="Disconnect reason from the contact record." entries={r?.disconnects ?? []} empty="No disconnect detail recorded yet." color="var(--chart-series-4)" />
-          </div>
-        </Section>
+        <div className="flex h-[12.5rem] shrink-0 gap-fluid-xs">
+          <RankList title="What was said" right={r ? `${r.analysed} transcripts` : ''} entries={r?.categories ?? []} empty="Categories appear once an agent call has been analysed." color="var(--chart-series-5)" />
+          <RankList title="How calls ended" right={r ? `${r.detailed} with detail` : ''} entries={r?.disconnects ?? []} empty="No disconnect detail recorded yet." color="var(--chart-series-4)" />
+          <Facts title="Conversation" right={r ? `${r.analysed} analysed` : ''} rows={conversation} />
+        </div>
 
-        <GlassPanel padding="sm" gap="xs" className="min-h-[13rem] flex-1">
+        <GlassPanel padding="sm" gap="xs" className="min-h-[9rem] flex-1">
           <header className="flex items-center justify-between">
             <PanelTitle>Agents</PanelTitle>
+            <span className="font-mono text-fluid-micro text-content-muted tabular-nums">{r ? `${r.agents.length} agent${r.agents.length === 1 ? '' : 's'} ${scopeWord}` : ''}</span>
           </header>
-          <DataTable columns={AGENT_COLUMNS} rows={r?.agents ?? []} rowKey={(a) => a.agentId} rowClass={() => 'text-content-secondary'} empty={{ title: 'No agent-handled calls in this scope', description: 'Talk, hold and after-call-work appear once a patient reaches an agent.' }} />
+          <DataTable columns={AGENT_COLUMNS} rows={r?.agents ?? []} rowKey={(a) => a.agentId} rowClass={() => 'text-content-secondary'} empty={{ title: 'No agent-handled calls in this scope', description: 'Talk, hold and after-call work appear once a patient reaches an agent.' }} />
         </GlassPanel>
       </div>
     </div>

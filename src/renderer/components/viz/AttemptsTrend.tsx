@@ -1,4 +1,4 @@
-import { useId, type CSSProperties } from 'react';
+import { useId, type CSSProperties, type ReactNode } from 'react';
 import { Tile } from './Tile';
 import { enterVars, useChartEntry } from './chartEnter';
 
@@ -29,7 +29,7 @@ function polylineLength(points: { x: number; y: number }[]): number {
   return total > 0 ? Math.ceil(total) : 1;
 }
 
-export function AttemptsTrend({ title, sentence, labels, series, replayKey }: { title: string; sentence?: string; labels: string[]; series: TrendSeries[]; replayKey: string }) {
+export function AttemptsTrend({ title, sentence, right, labels, series, replayKey }: { title: string; sentence?: string; right?: ReactNode; labels: string[]; series: TrendSeries[]; replayKey: string }) {
   const gradientId = useId();
   const entryClass = useChartEntry(series.length, replayKey);
   const peak = Math.max(0, ...series.flatMap((s) => s.values));
@@ -45,7 +45,7 @@ export function AttemptsTrend({ title, sentence, labels, series, replayKey }: { 
       : `M0,${VIEW_H} L${values.map((v, i) => `${scaleX(i).toFixed(2)},${scaleY(v).toFixed(2)}`).join(' L')} L${VIEW_W},${VIEW_H} Z`;
   const labelStep = Math.max(1, Math.ceil(labels.length / 6));
   return (
-    <Tile title={title} sentence={sentence}>
+    <Tile title={title} sentence={sentence} right={right}>
       <div className={`ds-chart-plot relative min-h-0 flex-1 ${entryClass}`}>
         <span aria-hidden="true" className="ds-chart-backdrop" />
         <span aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">

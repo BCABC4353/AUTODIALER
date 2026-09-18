@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Download, RefreshCw, Trash2 } from 'lucide-react';
-import { Button, GlassPanel, PanelTitle, Pill } from '@ds/index.js';
+import { Button, GlassPanel, PanelTitle, Pill, SegmentedControl } from '@ds/index.js';
 import type { ResultRow } from '@shared/types';
 import { categoryEffect, categoryLabel } from '@shared/categories';
 import { formatPhone, stripE164 } from '@shared/phone';
 import { formatLocal } from '@shared/time';
-import { outcomeLabel, outcomeTone } from '@shared/outcome';
+import { HUMAN_OUTCOME, outcomeLabel, outcomeTone } from '@shared/outcome';
 import { formatCost } from '@shared/pricing';
 import { plural } from '../lib/format';
 import { ActionBar } from './ActionBar';
@@ -68,6 +68,24 @@ const COLUMNS: Column<ResultRow>[] = [
 
 const EFFECT_TONE: Record<string, string> = { paid: 'emerald', dnc: 'red', handled: 'blue', callback: 'amber', flag: 'violet' };
 
+type Filter = 'all' | 'human' | 'paid' | 'handled' | 'callback' | 'flag' | 'dnc';
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'human', label: 'Humans' },
+  { id: 'paid', label: 'Paid' },
+  { id: 'handled', label: 'Handled' },
+  { id: 'callback', label: 'Callbacks' },
+  { id: 'flag', label: 'Flagged' },
+  { id: 'dnc', label: 'Do not call' },
+];
+
+function matches(r: ResultRow, filter: Filter): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'human') return r.outcome === HUMAN_OUTCOME;
+  return categoriesOf(r).some((c) => categoryEffect(c) === filter);
+}
+
 function categoriesOf(r: ResultRow): string[] {
   if (!r.analysis_json) return [];
   try {
@@ -92,7 +110,9 @@ export function ResultsView({
   onClear: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const selected = selectedId === null ? null : (results.find((r) => r.id === selectedId) ?? null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const rows = filter === 'all' ? results : results.filter((r) => matches(r, filter));
+  const selected = selectedId === null ? null : (rows.find((r) => r.id === selectedId) ?? null);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ActionBar
@@ -106,8 +126,9 @@ export function ResultsView({
               <Download size={13} />
               Export CSV
             </Button>
+            <SegmentedControl label="Show" items={FILTERS.map((f) => ({ id: f.id, label: f.label, pressed: f.id === filter }))} onSelect={(id: Filter) => setFilter(id)} />
             <span className="text-fluid-label font-bold text-content-muted tabular-nums">
-              {plural(results.length, 'attempt')} · {formatCost(results.reduce((sum, r) => sum + (r.outcome ? r.cost : 0), 0))} shown
+              {plural(rows.length, 'attempt')} · {formatCost(rows.reduce((sum, r) => sum + (r.outcome ? r.cost : 0), 0))}
             </span>
           </>
         }
@@ -132,12 +153,12 @@ export function ResultsView({
           <div className="flex min-h-0 flex-1 gap-fluid-sm">
             <DataTable
               columns={COLUMNS}
-              rows={results}
+              rows={rows}
               rowKey={(r) => String(r.id)}
               rowClass={() => 'text-content-secondary'}
               onSelect={(r) => setSelectedId(r.id === selectedId ? null : r.id)}
               selectedKey={selectedId === null ? null : String(selectedId)}
-              empty={{ title: 'No attempts yet', description: 'Start dialing and outcomes will land here as calls disconnect.' }}
+              empty={filter === 'all' ? { title: 'No attempts yet', description: 'Start dialing and outcomes will land here as calls disconnect.' } : { title: `Nothing ${FILTERS.find((f) => f.id === filter)?.label.toLowerCase()} yet`, description: 'Matches come from the transcript once an agent call has been analysed.' }}
             />
             {selected && <CallDetail row={selected} analysisTick={analysisTick} onClose={() => setSelectedId(null)} />}
           </div>

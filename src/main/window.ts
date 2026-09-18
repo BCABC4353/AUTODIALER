@@ -12,7 +12,7 @@ export function getMainWindow(): BrowserWindow | null {
 export function createWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
     width: 1240,
-    height: 800,
+    height: 750,
     minWidth: 980,
     minHeight: 620,
     title: 'BCABC Autodialer',

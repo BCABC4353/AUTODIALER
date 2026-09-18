@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Tile } from './Tile';
 import { enterVars, useChartEntry } from './chartEnter';
 
@@ -8,11 +8,11 @@ export interface BarEntry {
   color: string;
 }
 
-export function OutcomeBars({ title, sentence, entries, replayKey }: { title: string; sentence?: string; entries: BarEntry[]; replayKey: string }) {
+export function OutcomeBars({ title, sentence, right, entries, replayKey }: { title: string; sentence?: string; right?: ReactNode; entries: BarEntry[]; replayKey: string }) {
   const peak = Math.max(0, ...entries.map((e) => e.value));
   const entryClass = useChartEntry(entries.length, replayKey);
   return (
-    <Tile title={title} sentence={sentence}>
+    <Tile title={title} sentence={sentence} right={right}>
       <div className={`ds-chart-plot relative min-h-0 flex-1 ${entryClass}`}>
         <span aria-hidden="true" className="ds-chart-backdrop" />
         <span aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
