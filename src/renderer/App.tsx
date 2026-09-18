@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@ds/index.js';
 import { DialView } from './components/DialView';
@@ -11,12 +11,21 @@ import { PhoneRail } from './components/PhoneRail';
 import { ResultsView } from './components/ResultsView';
 import { useDialer } from './state/useDialer';
 
+const ORDER: View[] = ['load', 'dial', 'results', 'insights'];
+
 export function App() {
   const [view, setView] = useState<View>('dial');
+  const previous = useRef<View>('dial');
   const d = useDialer();
+  const direction = ORDER.indexOf(view) >= ORDER.indexOf(previous.current) ? 1 : -1;
+  const slide = { '--view-from-x': `${direction * 40}px`, '--view-from-y': '0px' } as CSSProperties;
+  const go = (next: View) => {
+    previous.current = view;
+    setView(next);
+  };
   return (
     <div className="@container/app flex h-full flex-col bg-surface-deep text-content">
-      <Header view={view} onView={setView} status={d.status} patientCount={d.patients.length} onStart={() => void d.start()} onStop={() => void d.stop()} />
+      <Header view={view} onView={go} status={d.status} patientCount={d.patients.length} onStart={() => void d.start()} onStop={() => void d.stop()} />
       {d.error && (
         <div role="alert" className="animate-slide-in-top z-30 flex items-center justify-between gap-3 border-b border-glass-edge bg-conflict-wash px-fluid-md py-2">
           <span className="ds-smallcaps min-w-0 truncate text-fluid-label text-content normal-case">
@@ -30,7 +39,7 @@ export function App() {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main key={view} className="flex min-h-0 min-w-0 flex-1 flex-col" style={slide}>
           {view === 'load' && (
             <LoadView key="load" patients={d.patients} onImport={() => void d.importCsv()} onRefresh={() => void d.refreshPatients()} onToggleDnc={(run) => void d.toggleDnc(run)} />
           )}

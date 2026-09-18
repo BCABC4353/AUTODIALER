@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Download, RefreshCw, Trash2 } from 'lucide-react';
 import { Button, GlassPanel, PanelTitle, Pill, SegmentedControl } from '@ds/index.js';
 import type { ResultRow } from '@shared/types';
@@ -160,7 +160,11 @@ export function ResultsView({
               selectedKey={selectedId === null ? null : String(selectedId)}
               empty={filter === 'all' ? { title: 'No attempts yet', description: 'Start dialing and outcomes will land here as calls disconnect.' } : { title: `Nothing ${FILTERS.find((f) => f.id === filter)?.label.toLowerCase()} yet`, description: 'Matches come from the transcript once an agent call has been analysed.' }}
             />
-            {selected && <CallDetail row={selected} analysisTick={analysisTick} onClose={() => setSelectedId(null)} />}
+            {selected && (
+              <div className="detail-enter flex min-h-0 shrink-0 justify-end overflow-hidden" style={{ '--detail-w': '26rem' } as CSSProperties}>
+                <CallDetail row={selected} analysisTick={analysisTick} onClose={() => setSelectedId(null)} />
+              </div>
+            )}
           </div>
         </GlassPanel>
       </div>
