@@ -57,6 +57,7 @@ function sleep(ms: number): Promise<void> {
 
 export interface AgentSnapshot {
   available: boolean;
+  slots: number;
   contactIds: string[];
   reachable: boolean;
 }
@@ -122,18 +123,22 @@ export class Aws {
         new GetCurrentUserDataCommand({ InstanceId: CONNECT_INSTANCE_ID, Filters: { Queues: [QUEUE_ID] } }),
       );
       let available = false;
+      let open = 0;
       const contactIds: string[] = [];
       for (const user of data.UserDataList ?? []) {
         const status = user.Status?.StatusName;
         const slots = user.AvailableSlotsByChannel?.VOICE ?? 0;
-        if (status === 'Available' && slots > 0) available = true;
+        if (status === 'Available' && slots > 0) {
+          available = true;
+          open += slots;
+        }
         for (const contact of user.Contacts ?? []) {
           if (contact.ContactId) contactIds.push(contact.ContactId);
         }
       }
-      return { available, contactIds, reachable: true };
+      return { available, slots: open, contactIds, reachable: true };
     } catch {
-      return { available: true, contactIds: [], reachable: false };
+      return { available: true, slots: 1, contactIds: [], reachable: false };
     }
   }
 

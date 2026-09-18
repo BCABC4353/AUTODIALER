@@ -23,7 +23,7 @@ export const CATEGORY_RULES: CategoryRule[] = [
   { name: 'autodialer-live-upset', label: 'upset during the call', effect: 'flag', note: 'Upset during the call' },
 ];
 
-export const HIDDEN_CATEGORIES = new Set(['autodialer-extract']);
+export const HIDDEN_CATEGORIES = new Set(['autodialer-extract', 'autodialer-extract-acw']);
 
 const BY_NAME = new Map(CATEGORY_RULES.map((r) => [r.name, r]));
 

@@ -25,6 +25,7 @@ export interface DialerState {
   dismissError: () => void;
   start: () => Promise<void>;
   stop: () => Promise<void>;
+  setOptions: (options: { allowRepeats: boolean }) => Promise<void>;
   importCsv: () => Promise<void>;
   toggleDnc: (run: string) => Promise<void>;
   refreshPatients: () => Promise<void>;
@@ -132,6 +133,7 @@ export function useDialer(): DialerState {
 
   const start = useCallback(() => api.dialer.start(), [api]);
   const stop = useCallback(() => api.dialer.stop(), [api]);
+  const setOptions = useCallback((options: { allowRepeats: boolean }) => api.dialer.setOptions(options), [api]);
   const importCsv = useCallback(async () => {
     try {
       await api.patients.importCsv();
@@ -161,6 +163,7 @@ export function useDialer(): DialerState {
     dismissError: () => setError(null),
     start,
     stop,
+    setOptions,
     importCsv,
     toggleDnc,
     refreshPatients,

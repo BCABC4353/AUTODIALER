@@ -12,6 +12,7 @@ const api: DialerApi = {
     stop: () => ipcRenderer.invoke('dialer:stop'),
     status: () => ipcRenderer.invoke('dialer:status'),
     log: () => ipcRenderer.invoke('dialer:log'),
+    setOptions: (options) => ipcRenderer.invoke('dialer:set-options', options),
   },
   results: {
     list: () => ipcRenderer.invoke('results:list'),

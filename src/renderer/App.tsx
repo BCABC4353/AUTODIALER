@@ -44,7 +44,7 @@ export function App() {
             <LoadView key="load" patients={d.patients} onImport={() => void d.importCsv()} onRefresh={() => void d.refreshPatients()} onToggleDnc={(run) => void d.toggleDnc(run)} />
           )}
           {view === 'dial' && (
-            <DialView key="dial" status={d.status} now={d.now} log={d.log} session={d.session} />
+            <DialView key="dial" status={d.status} now={d.now} log={d.log} session={d.session} onOptions={(o) => void d.setOptions(o)} />
           )}
           {view === 'results' && (
             <ResultsView key="results" results={d.results} analysisTick={d.analysisTick} onRefresh={() => void d.refreshResults()} onExport={() => void d.exportCsv()} onClear={() => void d.clearHistory()} />

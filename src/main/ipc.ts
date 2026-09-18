@@ -55,6 +55,7 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
   ipcMain.handle('dialer:stop', () => dialer.stop());
   ipcMain.handle('dialer:status', () => dialer.status());
   ipcMain.handle('dialer:log', () => dialer.logLines());
+  ipcMain.handle('dialer:set-options', (_e, options: { allowRepeats: boolean }) => dialer.setOptions(options));
 
   ipcMain.handle('results:list', () => listResults(dialer.db));
   ipcMain.handle('results:session', () => dialer.sessionStats());
@@ -95,7 +96,7 @@ export function registerIpc(dialer: Dialer, getWindow: () => BrowserWindow | nul
       defaultId: 1,
       cancelId: 1,
       message: 'Delete every attempt record?',
-      detail: 'Patients become eligible to dial again immediately.',
+      detail: 'Recordings and transcripts stay in AWS, but every call disappears from this dashboard for good. To re-dial patients during testing, use the repeat-calls checkbox on the Dial tab instead.',
     };
     const choice = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
     if (choice.response !== 0) return 0;

@@ -4,7 +4,8 @@ function footerText(status: DialerStatus | null): string {
   if (!status) return 'connecting';
   if (status.runState === 'running') {
     const agent = status.agentAvailable === false ? 'no agent available, holding' : `${status.pending} queued`;
-    return `campaign ${status.campaignState.toLowerCase()} · ${agent} · pipeline depth 2 · 5-minute expiry`;
+    const repeats = status.allowRepeats ? ' · repeat calls allowed' : '';
+    return `campaign ${status.campaignState.toLowerCase()} · ${agent} · up to ${status.depth} in flight · 5-minute expiry${repeats}`;
   }
   if (status.runState === 'starting') return 'starting campaign';
   if (status.runState === 'stopping') return 'pausing campaign';

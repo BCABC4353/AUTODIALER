@@ -41,6 +41,18 @@ const COLUMNS: Column<ResultRow>[] = [
     cell: (r) => (r.outcome ? <span title={r.cost_estimated ? 'estimated from the outcome; durations were not recorded' : undefined}>{formatCost(r.cost)}{r.cost_estimated ? '*' : ''}</span> : <BlankDash />),
   },
   {
+    id: 'mood',
+    label: 'Mood',
+    width: '5rem',
+    align: 'right',
+    mono: true,
+    cell: (r) => {
+      const m = moodOf(r);
+      if (m === null) return <BlankDash />;
+      return <span className={m <= -1.5 ? 'text-chip-org-fg' : m >= 1.5 ? 'text-chip-emerald-fg' : 'text-content-secondary'}>{`${m > 0 ? '+' : ''}${m}`}</span>;
+    },
+  },
+  {
     id: 'flags',
     label: 'Said',
     width: '14rem',
@@ -84,6 +96,16 @@ function matches(r: ResultRow, filter: Filter): boolean {
   if (filter === 'all') return true;
   if (filter === 'human') return r.outcome === HUMAN_OUTCOME;
   return categoriesOf(r).some((c) => categoryEffect(c) === filter);
+}
+
+function moodOf(r: ResultRow): number | null {
+  if (!r.analysis_json) return null;
+  try {
+    const parsed = JSON.parse(r.analysis_json) as { characteristics?: { sentiment?: { customer?: number | null } } | null };
+    return parsed.characteristics?.sentiment?.customer ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function categoriesOf(r: ResultRow): string[] {

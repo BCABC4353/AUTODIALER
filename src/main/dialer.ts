@@ -30,7 +30,8 @@ import { buildDetail, fallbackSummary, fetchAnalysis, fetchCharacteristics, fetc
 import { categoryEffect, categoryLabel, categoryRule } from '../shared/categories';
 import { evaluate, type DropReason } from '../shared/rules';
 import { normalizePhone } from '../shared/phone';
-import { outcomeKey, outcomeLabel, outcomeTone, EXPIRED_OUTCOME, HUMAN_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
+import { outcomeKey, outcomeLabel, outcomeTone, EXPIRED_OUTCOME, HUMAN_OUTCOME, NO_AGENT_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
+import { readSettings, writeSettings, type Settings } from './settings';
 import { clockStamp, toUtcText, parseUtcText } from '../shared/time';
 import { attemptCost, durationsFor } from '../shared/pricing';
 import type {
@@ -164,6 +165,8 @@ export class Dialer {
   private liveLensId: string | null = null;
   private liveLensAt = 0;
   private nextCache: { at: number; patient: Patient | null } = { at: 0, patient: null };
+  settings: Settings = readSettings();
+  private depth = PIPELINE_DEPTH;
   private tickTimer: NodeJS.Timeout | null = null;
   private pollTimer: NodeJS.Timeout | null = null;
   private analysisTimer: NodeJS.Timeout | null = null;
@@ -235,8 +238,21 @@ export class Dialer {
       stats: { ...this.stats },
       now: this.now,
       pending: this.pendingCount(),
+      depth: this.depth,
+      allowRepeats: this.settings.allowRepeats,
       version: app.getVersion(),
     };
+  }
+
+  setOptions(options: Partial<Settings>): void {
+    const next = { ...this.settings, ...options };
+    const changed = next.allowRepeats !== this.settings.allowRepeats;
+    this.settings = next;
+    writeSettings(next);
+    if (changed) this.logLine(next.allowRepeats ? 'testing mode on: daily and weekly call limits are lifted' : 'testing mode off: one call per patient per day, three per week', 'ok');
+    this.lastNoEligible = '';
+    this.emitStatus();
+    this.requestTick();
   }
 
   private emitStatus(): void {
@@ -323,7 +339,7 @@ export class Dialer {
     const dropped: Record<string, number> = {};
     const ctx = this.ruleContext();
     for (const patient of listPatients(this.db)) {
-      const reason = evaluate(patient, now, ctx);
+      const reason = evaluate(patient, now, ctx, { allowRepeats: this.settings.allowRepeats });
       if (reason) {
         dropped[reason] = (dropped[reason] ?? 0) + 1;
         continue;
@@ -363,6 +379,11 @@ export class Dialer {
     if (this.pendingCount() >= PIPELINE_DEPTH) return;
     const snapshot = await this.aws.agentSnapshot();
     this.agentAvailable = snapshot.reachable ? snapshot.available : null;
+    this.depth = Math.max(1, Math.min(PIPELINE_DEPTH, snapshot.slots));
+    if (this.pendingCount() >= this.depth) {
+      this.emitStatus();
+      return;
+    }
     if (!snapshot.available) {
       if (!this.holdingLogged) this.logLine('no agent is available on the queue, holding until one goes Available');
       this.holdingLogged = true;
@@ -573,9 +594,10 @@ export class Dialer {
   private recordOutcome(contactId: string, contact: Contact, attrs: Record<string, string>): void {
     const run = attrs.RUN;
     if (!run) return;
-    const outcome = contact.AnsweringMachineDetectionStatus || contact.DisconnectReason || 'UNKNOWN';
+    let outcome = contact.AnsweringMachineDetectionStatus || contact.DisconnectReason || 'UNKNOWN';
     let talk: number | null = null;
     const connected = contact.AgentInfo?.ConnectedToAgentTimestamp;
+    if (outcome === HUMAN_OUTCOME && !connected) outcome = NO_AGENT_OUTCOME;
     if (connected && contact.DisconnectTimestamp) {
       talk = Math.floor((contact.DisconnectTimestamp.getTime() - connected.getTime()) / 1000);
     }
@@ -599,7 +621,9 @@ export class Dialer {
           ? 'no answer, moving on'
           : outcome === HUMAN_OUTCOME
             ? 'call finished'
-            : `${outcomeLabel(outcome)}, moving on`;
+            : outcome === NO_AGENT_OUTCOME
+              ? 'answered, but no agent picked up before they hung up'
+              : `${outcomeLabel(outcome)}, moving on`;
     this.logLine(`${verdict}  ${this.describePatient(run, attrs.PATIENT)}${detail}`, outcome === HUMAN_OUTCOME ? 'ok' : '');
     this.nextCache.at = 0;
     this.emit({ type: 'results' });
@@ -660,12 +684,20 @@ export class Dialer {
       }
     }
     const firstReady = analysis.status === 'ready' && previous?.status !== 'ready';
+    const firstFile = Boolean(analysis.characteristics) && !previous?.characteristics;
     const summary = analysis.status === 'ready' ? fallbackSummary(analysis) : null;
     if (analysis.status === 'ready') analysis.actions = this.applyCategories(attempt, analysis, summary);
     saveAnalysis(this.db, attempt.id, JSON.stringify(analysis), summary, true);
     if (firstReady) {
       this.logLine(`transcript ready  ${this.describePatient(attempt.run)}${summary ? '  ' + summary : ''}`, 'ok');
       this.nextCache.at = 0;
+    }
+    if (firstFile && analysis.characteristics) {
+      const ch = analysis.characteristics;
+      const mood = ch.sentiment.customer === null ? 'no sentiment' : `patient ${ch.sentiment.customer > 0 ? '+' : ''}${ch.sentiment.customer}`;
+      const said = analysis.categories.map(categoryLabel).join(', ');
+      const pulled = analysis.extracted.map((f) => f.label).join(', ');
+      this.logLine(`analysis ready  ${this.describePatient(attempt.run)}  ${mood}${said ? '  said: ' + said : '  no categories matched'}${pulled ? '  pulled: ' + pulled : ''}`, 'ok');
     }
     this.emit({ type: 'analysis', id: attempt.id });
     this.emit({ type: 'results' });

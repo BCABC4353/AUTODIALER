@@ -1,4 +1,5 @@
 import { GlassPanel, PanelTitle } from '@ds/index.js';
+import { ActionBar } from './ActionBar';
 import type { DialerStatus, LogLine, NowState, SessionStats } from '@shared/types';
 import { formatCost } from '@shared/pricing';
 import { ActivityLog } from './ActivityLog';
@@ -19,13 +20,16 @@ export function DialView({
   now,
   log,
   session,
+  onOptions,
 }: {
   status: DialerStatus | null;
   now: NowState | null;
   log: LogLine[];
   session: SessionStats | null;
+  onOptions: (options: { allowRepeats: boolean }) => void;
 }) {
   const running = status?.runState === 'running';
+  const allowRepeats = status?.allowRepeats ?? false;
   const pushed = status?.stats.sent ?? 0;
   const completed = session?.completed ?? 0;
   const human = session?.human ?? 0;
@@ -33,6 +37,24 @@ export function DialView({
   const replayKey = `${session?.completed ?? 0}-${session?.sent ?? 0}`;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <ActionBar
+        left={
+          <label className="flex cursor-pointer items-center gap-2 text-fluid-label font-bold text-content-secondary">
+            <input
+              type="checkbox"
+              checked={allowRepeats}
+              onChange={(e) => onOptions({ allowRepeats: e.target.checked })}
+              className="h-3.5 w-3.5 cursor-pointer accent-[color:var(--accent)]"
+            />
+            <span>Testing: allow repeat calls to the same patient</span>
+          </label>
+        }
+        right={
+          <span className="text-fluid-nano font-black uppercase tracking-wider text-content-muted">
+            {allowRepeats ? 'Daily and weekly limits are off' : 'One call per patient per day, three per week'}
+          </span>
+        }
+      />
       <div className="ds-ambient view-enter flex min-h-0 flex-1 flex-col gap-fluid-sm p-fluid-md">
         <NowCalling now={now} running={running} />
         <GlassPanel padding="sm" gap="xs" className="h-[16rem] shrink-0">

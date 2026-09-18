@@ -2,6 +2,7 @@ import type { OutcomeKey, Tone } from './types';
 
 export const HUMAN_OUTCOME = 'HUMAN_ANSWERED';
 export const EXPIRED_OUTCOME = 'EXPIRED';
+export const NO_AGENT_OUTCOME = 'ANSWERED_NO_AGENT';
 
 const NO_ANSWER = new Set([
   'EXPIRED',
@@ -30,6 +31,7 @@ export function outcomeKey(outcome: string | null | undefined): OutcomeKey {
 }
 
 export function outcomeLabel(outcome: string | null | undefined): string {
+  if (outcome === NO_AGENT_OUTCOME) return 'answered, no agent';
   return (outcome || 'pending').replace(/_/g, ' ').toLowerCase();
 }
 

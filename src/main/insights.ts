@@ -209,15 +209,19 @@ function meanLoudness(turns: LensFile['Transcript'], who: string): number | null
   return values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : null;
 }
 
+function dayFolder(at: Date): string {
+  const y = at.getUTCFullYear();
+  const m = String(at.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(at.getUTCDate()).padStart(2, '0');
+  return `${y}/${m}/${d}/`;
+}
+
 export async function findAnalysisKey(contactId: string, at: Date | null): Promise<string | null> {
   const prefixes: string[] = [];
   if (at) {
-    const y = at.getUTCFullYear();
-    const m = String(at.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(at.getUTCDate()).padStart(2, '0');
-    prefixes.push(`${RECORDING_PREFIX}Analysis/Voice/${y}/${m}/${d}/`);
+    prefixes.push(`Analysis/Voice/${dayFolder(at)}`, `${RECORDING_PREFIX}Analysis/Voice/${dayFolder(at)}`);
   }
-  prefixes.push(`${RECORDING_PREFIX}Analysis/`);
+  prefixes.push('Analysis/Voice/', `${RECORDING_PREFIX}Analysis/`);
   for (const prefix of prefixes) {
     let token: string | undefined;
     do {
@@ -292,10 +296,7 @@ export function fallbackSummary(analysis: CallAnalysis): string | null {
 export async function findRecordingKey(contactId: string, at: Date | null): Promise<string | null> {
   const prefixes: string[] = [];
   if (at) {
-    const y = at.getUTCFullYear();
-    const m = String(at.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(at.getUTCDate()).padStart(2, '0');
-    prefixes.push(`${RECORDING_PREFIX}connect/bcabc/CallRecordings/${y}/${m}/${d}/`);
+    prefixes.push(`${RECORDING_PREFIX}${dayFolder(at)}`, `${RECORDING_PREFIX}connect/bcabc/CallRecordings/${dayFolder(at)}`);
   }
   prefixes.push(RECORDING_PREFIX);
   for (const prefix of prefixes) {

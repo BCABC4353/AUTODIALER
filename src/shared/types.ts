@@ -233,6 +233,8 @@ export interface DialerStatus {
   stats: Stats;
   now: NowState;
   pending: number;
+  depth: number;
+  allowRepeats: boolean;
   version: string;
 }
 
@@ -280,6 +282,7 @@ export interface DialerApi {
     stop: () => Promise<void>;
     status: () => Promise<DialerStatus>;
     log: () => Promise<LogLine[]>;
+    setOptions: (options: { allowRepeats: boolean }) => Promise<void>;
   };
   results: {
     list: () => Promise<ResultRow[]>;
