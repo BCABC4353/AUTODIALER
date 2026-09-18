@@ -16,7 +16,7 @@ export function App() {
   const d = useDialer();
   return (
     <div className="@container/app flex h-full flex-col bg-surface-deep text-content">
-      <Header view={view} onView={setView} status={d.status} patientCount={d.patients.length} />
+      <Header view={view} onView={setView} status={d.status} patientCount={d.patients.length} onStart={() => void d.start()} onStop={() => void d.stop()} />
       {d.error && (
         <div role="alert" className="animate-slide-in-top z-30 flex items-center justify-between gap-3 border-b border-glass-edge bg-conflict-wash px-fluid-md py-2">
           <span className="ds-smallcaps min-w-0 truncate text-fluid-label text-content normal-case">
@@ -35,7 +35,7 @@ export function App() {
             <LoadView key="load" patients={d.patients} onImport={() => void d.importCsv()} onRefresh={() => void d.refreshPatients()} onToggleDnc={(run) => void d.toggleDnc(run)} />
           )}
           {view === 'dial' && (
-            <DialView key="dial" status={d.status} now={d.now} log={d.log} session={d.session} onStart={() => void d.start()} onStop={() => void d.stop()} />
+            <DialView key="dial" status={d.status} now={d.now} log={d.log} session={d.session} />
           )}
           {view === 'results' && (
             <ResultsView key="results" results={d.results} analysisTick={d.analysisTick} onRefresh={() => void d.refreshResults()} onExport={() => void d.exportCsv()} onClear={() => void d.clearHistory()} />

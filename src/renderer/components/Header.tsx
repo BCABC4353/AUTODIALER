@@ -1,6 +1,6 @@
-import { Moon, Sun } from 'lucide-react';
-import { Button, Pill, SegmentedControl } from '@ds/index.js';
-import type { DialerStatus, Tone } from '@shared/types';
+import { Moon, Phone, Square, Sun } from 'lucide-react';
+import { Button, SegmentedControl } from '@ds/index.js';
+import type { DialerStatus } from '@shared/types';
 import { LOGO_SRC } from '../lib/logo';
 import { useTheme } from '../lib/theme';
 import { MarsLight } from './MarsLight';
@@ -14,28 +14,27 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'insights', label: 'Insights' },
 ];
 
-function stateChip(status: DialerStatus | null): { label: string; tone: Tone; solid: boolean } {
-  const run = status?.runState ?? 'stopped';
-  if (run === 'running') return { label: 'running', tone: 'emerald', solid: true };
-  if (run === 'starting' || run === 'stopping') return { label: run, tone: 'amber', solid: true };
-  return { label: 'stopped', tone: 'slate', solid: false };
-}
-
 export function Header({
   view,
   onView,
   status,
   patientCount,
+  onStart,
+  onStop,
 }: {
   view: View;
   onView: (view: View) => void;
   status: DialerStatus | null;
   patientCount: number;
+  onStart: () => void;
+  onStop: () => void;
 }) {
-  const chip = stateChip(status);
   const { theme, toggle } = useTheme();
+  const runState = status?.runState ?? 'stopped';
+  const running = runState === 'running';
+  const busy = runState === 'starting' || runState === 'stopping';
   const live = status?.now.kind === 'live';
-  const active = live || status?.runState === 'running' || status?.runState === 'starting';
+  const active = live || running || runState === 'starting';
   return (
     <header className="@container/header z-40 shrink-0 border-b border-glass-edge bg-glass-header shadow-lg">
       <div className="flex h-[var(--chrome-header-floor)] items-center justify-between gap-fluid-sm px-fluid-md">
@@ -56,9 +55,23 @@ export function Header({
         <div className="flex shrink-0 items-center gap-fluid-sm">
           <div className="flex items-center gap-2">
             <MarsLight size={22} active={Boolean(active)} />
-            <Pill tone={chip.tone} size="sm" intensity={chip.solid ? 'solid' : 'subtle'} border={!chip.solid}>
-              {chip.label}
-            </Pill>
+            {running || busy ? (
+              <Button
+                variant="chrome-ctl"
+                size="chrome"
+                disabled={busy}
+                onClick={onStop}
+                className="border-chip-red-bd bg-chip-red-bg font-black uppercase text-chip-red-fg hover:border-status-danger"
+              >
+                <Square size={12} />
+                {runState === 'stopping' ? 'Stopping' : runState === 'starting' ? 'Starting' : 'Stop dialing'}
+              </Button>
+            ) : (
+              <Button variant="primary" size="chrome" onClick={onStart} className="font-black uppercase">
+                <Phone size={13} />
+                Start dialing
+              </Button>
+            )}
           </div>
           <div aria-hidden="true" className="h-5 w-px shrink-0 bg-line" />
           <SegmentedControl
