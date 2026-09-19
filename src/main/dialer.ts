@@ -26,11 +26,11 @@ import {
   type Db,
 } from './db';
 import { Aws, buildRequest } from './aws';
-import { buildDetail, fallbackSummary, fetchAnalysis, fetchCharacteristics, fetchLive, fetchRecording, findRecordingKey, keyFromLocation } from './insights';
+import { buildDetail, fallbackSummary, fetchAnalysis, fetchCharacteristics, fetchLive, fetchRecording, findRecordingKey, keyFromLocation, userName } from './insights';
 import { categoryEffect, categoryLabel, categoryRule } from '../shared/categories';
 import { evaluate, type DropReason } from '../shared/rules';
 import { normalizePhone } from '../shared/phone';
-import { outcomeKey, outcomeLabel, outcomeTone, EXPIRED_OUTCOME, HUMAN_OUTCOME, NO_AGENT_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
+import { outcomeKey, outcomeLabel, EXPIRED_OUTCOME, HUMAN_OUTCOME, NO_AGENT_OUTCOME, OUTCOME_LABELS } from '../shared/outcome';
 import { readSettings, writeSettings, type Settings } from './settings';
 import { clockStamp, toUtcText, parseUtcText } from '../shared/time';
 import { attemptCost, durationsFor } from '../shared/pricing';
@@ -47,6 +47,7 @@ import type {
   FlaggedCall,
   InsightScope,
   InsightsReport,
+  LastCall,
   LiveLens,
   ResultDetail,
   LogLine,
@@ -122,11 +123,15 @@ const REASON_LABELS: Record<DropReason, [string, string]> = {
   same_block: ['waiting for a different time of day', 'waiting for a different time of day'],
 };
 
-function nobodyToCall(dropped: Record<string, number>): string {
+function reasonSummary(dropped: Record<string, number>): string {
   const parts = Object.entries(dropped)
     .sort((a, b) => b[1] - a[1])
     .map(([reason, n]) => `${n} ${REASON_LABELS[reason as DropReason]?.[n === 1 ? 0 : 1] ?? reason}`);
-  return parts.length ? `nobody to call right now: ${parts.join(', ')}` : 'nobody to call: the patient list is empty';
+  return parts.length ? parts.join(', ') : 'the patient list is empty';
+}
+
+function nobodyToCall(dropped: Record<string, number>): string {
+  return `nobody to call right now: ${reasonSummary(dropped)}`;
 }
 
 function money(value: number | null | undefined): string {
@@ -135,7 +140,25 @@ function money(value: number | null | undefined): string {
 }
 
 function idleNow(): NowState {
-  return { contactId: null, name: '—', run: '', balance: '', tripDate: '', schedule: '', event: '', sentiment: null, lastLine: '', status: 'idle', tone: 'slate', kind: 'idle' };
+  return {
+    contactId: null,
+    name: '—',
+    run: '',
+    balance: '',
+    tripDate: '',
+    schedule: '',
+    event: '',
+    sentiment: null,
+    lastLine: '',
+    headline: 'Dialing is off',
+    subline: '',
+    since: null,
+    agent: null,
+    last: null,
+    status: 'off',
+    tone: 'slate',
+    kind: 'idle',
+  };
 }
 
 function patientFacts(patient: Patient | undefined | null): Pick<NowState, 'tripDate' | 'schedule' | 'event' | 'sentiment' | 'lastLine'> {
@@ -151,7 +174,6 @@ export class Dialer {
   agentAvailable: boolean | null = null;
   stats: Stats = { sent: 0, human: 0, voicemail: 0, no_answer: 0, other: 0 };
   private seen = new Set<string>();
-  private lastOutcome = '';
   private liveWithAgent = false;
   private liveRuns = new Set<string>();
   private now: NowState = idleNow();
@@ -164,6 +186,10 @@ export class Dialer {
   private liveLens: LiveLens = { sentiment: null, lastLine: '', categories: [] };
   private liveLensId: string | null = null;
   private liveLensAt = 0;
+  private agentWrapping = false;
+  private agentName: string | null = null;
+  private nobodyReason = '';
+  private last: LastCall | null = null;
   private nextCache: { at: number; patient: Patient | null } = { at: 0, patient: null };
   settings: Settings = readSettings();
   private depth = PIPELINE_DEPTH;
@@ -211,8 +237,8 @@ export class Dialer {
     if (this.analysisTimer) clearInterval(this.analysisTimer);
   }
 
-  logLine(text: string, level: LogLine['level'] = ''): void {
-    const line: LogLine = { ts: clockStamp(), text, level };
+  logLine(text: string, level: LogLine['level'] = '', kind: LogLine['kind'] = 'detail'): void {
+    const line: LogLine = { ts: clockStamp(), text, level, kind };
     this.log.push(line);
     if (this.log.length > LOG_CAP) this.log.splice(0, this.log.length - LOG_CAP);
     this.emit({ type: 'log', line });
@@ -288,7 +314,7 @@ export class Dialer {
       this.logLine(this.aws.note);
       this.aws.note = null;
     }
-    this.logLine('dialing started', 'ok');
+    this.logLine('dialing started', 'ok', 'call');
     this.emitStatus();
     void this.tick();
   }
@@ -307,7 +333,7 @@ export class Dialer {
     }
     this.runState = 'stopped';
     this.lastNowKey = '';
-    this.logLine('dialing paused');
+    this.logLine('dialing paused', '', 'call');
     this.emitStatus();
   }
 
@@ -397,6 +423,7 @@ export class Dialer {
     this.nextCache = { at: Date.now(), patient };
     if (!patient) {
       const text = nobodyToCall(dropped);
+      this.nobodyReason = reasonSummary(dropped);
       if (text !== this.lastNoEligible) {
         this.lastNoEligible = text;
         this.logLine(text);
@@ -405,6 +432,7 @@ export class Dialer {
       return;
     }
     this.lastNoEligible = '';
+    this.nobodyReason = '';
     const phone = normalizePhone(patient.phone) as string;
     const request: OutboundRequest = buildRequest(patient.run, phone, patient.patient, patient.balance, now, EXPIRY_MINUTES, patient.trip_date);
     const { accepted, failed } = await this.aws.send([request]);
@@ -413,7 +441,7 @@ export class Dialer {
     if (tokens.has(request.clientToken)) {
       insertAttempt(this.db, patient.run, '+1' + phone, stamp);
       this.stats.sent += 1;
-      this.logLine(`sent to campaign  ${this.describePatient(patient.run, patient.patient, patient.balance)}`, 'ok');
+      this.logLine(`next up  ${this.describePatient(patient.run, patient.patient, patient.balance)}`, 'ok', 'call');
     }
     for (const f of failed) {
       this.logLine(`could not queue  ${this.describePatient(patient.run, patient.patient, patient.balance)}  ${f.failureCode ?? ''}`, 'err');
@@ -438,7 +466,12 @@ export class Dialer {
   private async pollContacts(): Promise<void> {
     if (!this.aws) return;
     const snapshot = await this.aws.agentSnapshot();
-    if (snapshot.reachable) this.agentAvailable = snapshot.available;
+    if (snapshot.reachable) {
+      this.agentAvailable = snapshot.available;
+      this.agentWrapping = snapshot.wrapping;
+      const id = snapshot.userIds[0];
+      if (id) this.agentName = (await userName(id)) ?? this.agentName;
+    }
     const ids = [...snapshot.contactIds];
     for (const id of await this.aws.recentContactIds()) if (!ids.includes(id)) ids.push(id);
     let live: { id: string; contact: Contact; attrs: Record<string, string> } | null = null;
@@ -484,7 +517,7 @@ export class Dialer {
     if (!next) return;
     for (const c of next.categories) {
       if (this.liveLens.categories.includes(c)) continue;
-      this.logLine(`live alert  ${this.describePatient(live.attrs.RUN ?? '', live.attrs.PATIENT)}  ${categoryLabel(c)}`, 'err');
+      this.logLine(`live alert  ${this.describePatient(live.attrs.RUN ?? '', live.attrs.PATIENT)}  ${categoryLabel(c)}`, 'err', 'call');
     }
     this.liveLens = next;
   }
@@ -497,7 +530,7 @@ export class Dialer {
       expireAttempt(this.db, attempt.id, EXPIRED_OUTCOME);
       this.stats.no_answer += 1;
       expired += 1;
-      this.logLine(`gave up  ${this.describePatient(attempt.run)}  no call went out within ${STALE_MINUTES} minutes`);
+      this.logLine(`gave up  ${this.describePatient(attempt.run)}  no call went out within ${STALE_MINUTES} minutes`, '', 'call');
     }
     if (expired) {
       this.emit({ type: 'results' });
@@ -508,69 +541,112 @@ export class Dialer {
   private updateNow(live: { id: string; contact: Contact; attrs: Record<string, string> } | null): void {
     let next: NowState;
     this.liveWithAgent = false;
+    const agent = this.agentName ?? 'the agent';
+    const base = { agent: this.agentName, last: this.last };
     if (live) {
-      const withAgent = Boolean(live.contact.AgentInfo?.ConnectedToAgentTimestamp);
+      const agentAt = live.contact.AgentInfo?.ConnectedToAgentTimestamp ?? null;
+      const answeredAt = live.contact.ConnectedToSystemTimestamp ?? null;
+      const withAgent = Boolean(agentAt);
       this.liveWithAgent = withAgent;
-      const amd = live.contact.AnsweringMachineDetectionStatus;
-      const status = withAgent ? 'on the line' : (amd ?? 'ringing').replace(/_/g, ' ').toLowerCase();
       const patient = live.attrs.RUN ? patientByRun(this.db, live.attrs.RUN) : undefined;
+      const name = live.attrs.PATIENT || patient?.patient || 'the patient';
+      const phase: { headline: string; subline: string; status: string; since: Date | null; tone: Tone } = withAgent
+        ? { headline: `${name} is on the line`, subline: `Talking with ${agent}`, status: 'on the line', since: agentAt, tone: 'emerald' }
+        : answeredAt
+          ? { headline: `${name} answered`, subline: 'Checking it is a person before connecting the agent', status: 'answered', since: answeredAt, tone: 'amber' }
+          : { headline: `Ringing ${name}`, subline: 'Waiting for someone to pick up', status: 'ringing', since: live.contact.InitiationTimestamp ?? null, tone: 'orange' };
       next = {
         contactId: live.id,
-        name: live.attrs.PATIENT || patient?.patient || '?',
+        name,
         run: live.attrs.RUN ? `RUN ${live.attrs.RUN}` : '',
         balance: live.attrs.BALANCE ? '$' + live.attrs.BALANCE : money(patient?.balance),
         ...patientFacts(patient),
         sentiment: withAgent ? this.liveLens.sentiment : null,
         lastLine: withAgent ? this.liveLens.lastLine : '',
-        status,
-        tone: withAgent ? 'emerald' : 'orange',
+        ...base,
+        headline: phase.headline,
+        subline: phase.subline,
+        since: phase.since ? phase.since.toISOString() : null,
+        status: phase.status,
+        tone: phase.tone,
         kind: 'live',
       };
+    } else if (this.runState !== 'running') {
+      const off: Pick<NowState, 'headline' | 'subline' | 'status' | 'tone'> =
+        this.runState === 'starting'
+          ? { headline: 'Starting the dialer', subline: 'Checking the campaign and the phone queue', status: 'starting', tone: 'amber' }
+          : this.runState === 'stopping'
+            ? { headline: 'Pausing the dialer', subline: 'No new calls will go out', status: 'pausing', tone: 'amber' }
+            : { headline: 'Dialing is off', subline: 'Press Start dialing when the agent is ready', status: 'off', tone: 'slate' };
+      next = { ...idleNow(), ...base, ...off };
     } else {
-      const since = toUtcText(new Date(Date.now() - EXPIRY_MINUTES * 60 * 1000));
-      const queued = pendingAttempts(this.db, since)[0];
+      const sinceText = toUtcText(new Date(Date.now() - EXPIRY_MINUTES * 60 * 1000));
+      const queued = pendingAttempts(this.db, sinceText)[0];
       if (queued) {
         const patient = patientByRun(this.db, queued.run);
+        const at = parseUtcText(queued.attempted_at);
+        const name = patient?.patient || queued.run;
         next = {
           contactId: 'queued:' + queued.run,
-          name: patient?.patient || queued.run,
+          name,
           run: `RUN ${queued.run}`,
           balance: money(patient?.balance),
           ...patientFacts(patient),
-          status: 'queued',
+          ...base,
+          headline: `Next up: ${name}`,
+          subline: `Handed to the dialer; the phone rings as soon as ${agent} is free`,
+          since: at ? at.toISOString() : null,
+          status: 'dialing shortly',
           tone: 'amber',
           kind: 'dialing',
         };
+      } else if (this.agentWrapping) {
+        next = { ...idleNow(), ...base, headline: 'Between calls', subline: `${agent} is wrapping up the last call`, status: 'wrapping up', tone: 'slate' };
+      } else if (this.agentAvailable === false) {
+        next = { ...idleNow(), ...base, headline: 'Waiting for an agent', subline: 'Nobody is set to Available in the phone panel', status: 'no agent', tone: 'amber' };
       } else {
-        const upcoming = this.runState === 'running' ? this.cachedNext() : null;
+        const upcoming = this.cachedNext();
         if (upcoming) {
+          const name = upcoming.patient || upcoming.run;
           next = {
             contactId: 'next:' + upcoming.run,
-            name: upcoming.patient || upcoming.run,
+            name,
             run: `RUN ${upcoming.run}`,
             balance: money(upcoming.balance),
             ...patientFacts(upcoming),
-            status: 'up next',
+            ...base,
+            headline: `Next up: ${name}`,
+            subline: 'Sending to the dialer',
+            since: null,
+            status: 'lining up',
             tone: 'slate',
             kind: 'next',
           };
         } else {
-          const label = this.lastOutcome ? 'last ' + outcomeLabel(this.lastOutcome) : 'idle';
-          const tone: Tone = this.lastOutcome ? outcomeTone(this.lastOutcome) : 'slate';
-          next = { ...idleNow(), status: label, tone };
+          next = {
+            ...idleNow(),
+            ...base,
+            headline: 'Nobody to call right now',
+            subline: this.nobodyReason || 'Everyone on the list has been called or is outside their calling hours',
+            status: 'idle',
+            tone: 'slate',
+          };
         }
       }
     }
     const changed =
       next.contactId !== this.now.contactId ||
       next.status !== this.now.status ||
-      next.name !== this.now.name ||
+      next.headline !== this.now.headline ||
+      next.subline !== this.now.subline ||
+      next.since !== this.now.since ||
       next.kind !== this.now.kind ||
       next.tripDate !== this.now.tripDate ||
       next.schedule !== this.now.schedule ||
       next.event !== this.now.event ||
       next.sentiment !== this.now.sentiment ||
-      next.lastLine !== this.now.lastLine;
+      next.lastLine !== this.now.lastLine ||
+      (next.last?.at ?? '') !== (this.now.last?.at ?? '');
     this.now = next;
     if (changed) {
       this.emit({ type: 'now', now: next });
@@ -582,13 +658,11 @@ export class Dialer {
     const key = `${now.kind}:${now.contactId ?? ''}:${now.status}`;
     if (key === this.lastNowKey) return;
     this.lastNowKey = key;
+    if (now.kind !== 'live') return;
     const who = `${now.run.replace(/^RUN /, '')}  ${now.name}  ${now.balance}`.trim();
-    if (now.kind === 'live') {
-      if (now.status === 'on the line') this.logLine(`on the line  ${who}  talk now`, 'ok');
-      else this.logLine(`${now.status}  ${who}`);
-    } else if (now.kind === 'next') {
-      this.logLine(`up next  ${who}`);
-    }
+    if (now.status === 'on the line') this.logLine(`on the line  ${who}  talk now`, 'ok', 'call');
+    else if (now.status === 'answered') this.logLine(`answered  ${who}  checking for a person`, '', 'call');
+    else this.logLine(`ringing  ${who}`, '', 'call');
   }
 
   private recordOutcome(contactId: string, contact: Contact, attrs: Record<string, string>): void {
@@ -611,20 +685,24 @@ export class Dialer {
     const answerSeconds = ended && answered ? Math.max(0, Math.round((ended.getTime() - answered.getTime()) / 1000)) : dialSeconds === null ? null : 0;
     resolveAttempt(this.db, open.id, contactId, outcome, talk, note, dialSeconds, answerSeconds);
     void this.captureDetail(open.id, contact);
-    this.lastOutcome = outcome;
+    this.last = { name: attrs.PATIENT || patientByRun(this.db, run)?.patient || run, run, outcome, at: clockStamp() };
     this.stats[outcomeKey(outcome)] += 1;
-    const detail = talk ? `  ${talk}s on the line` : '';
+    const who = this.describePatient(run, attrs.PATIENT);
     const verdict =
-      outcomeKey(outcome) === 'voicemail'
-        ? 'voicemail, moving on'
-        : outcomeKey(outcome) === 'no_answer'
-          ? 'no answer, moving on'
-          : outcome === HUMAN_OUTCOME
-            ? 'call finished'
-            : outcome === NO_AGENT_OUTCOME
-              ? 'answered, but no agent picked up before they hung up'
-              : `${outcomeLabel(outcome)}, moving on`;
-    this.logLine(`${verdict}  ${this.describePatient(run, attrs.PATIENT)}${detail}`, outcome === HUMAN_OUTCOME ? 'ok' : '');
+      outcome === HUMAN_OUTCOME
+        ? `call finished  ${who}${talk ? `  ${talk}s on the line` : ''}`
+        : outcome === NO_AGENT_OUTCOME
+          ? `answered, no agent  ${who}  they hung up before ${this.agentName ?? 'the agent'} picked up`
+          : outcomeKey(outcome) === 'voicemail'
+            ? `voicemail  ${who}`
+            : outcome === 'SIT_TONE_INVALID_NUMBER'
+              ? `invalid number  ${who}`
+              : outcome === 'SIT_TONE_BUSY'
+                ? `busy  ${who}`
+                : outcomeKey(outcome) === 'no_answer'
+                  ? `no answer  ${who}`
+                  : `${outcomeLabel(outcome)}  ${who}`;
+    this.logLine(verdict, outcome === HUMAN_OUTCOME ? 'ok' : '', 'call');
     this.nextCache.at = 0;
     this.emit({ type: 'results' });
     this.emitStatus();
@@ -970,7 +1048,7 @@ export class Dialer {
   clearHistory(): number {
     const n = clearAttempts(this.db);
     this.seen.clear();
-    this.lastOutcome = '';
+    this.last = null;
     this.lastNoEligible = '';
     this.stats = { sent: 0, human: 0, voicemail: 0, no_answer: 0, other: 0 };
     this.logLine(`cleared ${n} attempt records`);

@@ -58,6 +58,8 @@ function sleep(ms: number): Promise<void> {
 export interface AgentSnapshot {
   available: boolean;
   slots: number;
+  wrapping: boolean;
+  userIds: string[];
   contactIds: string[];
   reachable: boolean;
 }
@@ -124,21 +126,26 @@ export class Aws {
       );
       let available = false;
       let open = 0;
+      let wrapping = false;
+      const userIds: string[] = [];
       const contactIds: string[] = [];
       for (const user of data.UserDataList ?? []) {
         const status = user.Status?.StatusName;
         const slots = user.AvailableSlotsByChannel?.VOICE ?? 0;
+        const contacts = user.Contacts ?? [];
         if (status === 'Available' && slots > 0) {
           available = true;
           open += slots;
         }
-        for (const contact of user.Contacts ?? []) {
+        if (user.User?.Id && (status === 'Available' || contacts.length > 0)) userIds.push(user.User.Id);
+        for (const contact of contacts) {
           if (contact.ContactId) contactIds.push(contact.ContactId);
+          if (contact.AgentContactState === 'ENDED') wrapping = true;
         }
       }
-      return { available, slots: open, contactIds, reachable: true };
+      return { available, slots: open, wrapping, userIds, contactIds, reachable: true };
     } catch {
-      return { available: true, slots: 1, contactIds: [], reachable: false };
+      return { available: true, slots: 1, wrapping: false, userIds: [], contactIds: [], reachable: false };
     }
   }
 

@@ -214,6 +214,11 @@ export interface NowState {
   event: string;
   sentiment: string | null;
   lastLine: string;
+  headline: string;
+  subline: string;
+  since: string | null;
+  agent: string | null;
+  last: LastCall | null;
   status: string;
   tone: Tone;
   kind: 'live' | 'dialing' | 'next' | 'idle';
@@ -223,6 +228,14 @@ export interface LogLine {
   ts: string;
   text: string;
   level: '' | 'ok' | 'err';
+  kind: 'call' | 'detail';
+}
+
+export interface LastCall {
+  name: string;
+  run: string;
+  outcome: string;
+  at: string;
 }
 
 export interface DialerStatus {
